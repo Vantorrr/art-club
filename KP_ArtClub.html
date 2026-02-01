@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>КП: Shmukler Art Club Automation</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600&family=Playfair+Display:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Montserrat', sans-serif;
+            line-height: 1.6;
+            color: #2b2b2b;
+            background-color: #f9f9f9;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px;
+        }
+
+        .header {
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 20px;
+            margin-bottom: 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.5em;
+            color: #1a1a1a;
+            margin: 0;
+            line-height: 1.2;
+        }
+
+        h2 {
+            font-family: 'Playfair Display', serif;
+            color: #8e44ad; /* Deep Purple for Art/Creativity */
+            margin-top: 40px;
+            font-size: 1.8em;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+
+        .problem-box {
+            background-color: #fff;
+            border-left: 4px solid #e74c3c;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+        }
+
+        .solution-box {
+            background-color: #fff;
+            border-left: 4px solid #27ae60;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+        }
+
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            background: #fff;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+
+        .comparison-table th, .comparison-table td {
+            padding: 15px 20px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        .comparison-table th {
+            background-color: #f4f4f4;
+            font-family: 'Playfair Display', serif;
+            font-size: 1.1em;
+        }
+
+        .check-icon { color: #27ae60; font-weight: bold; }
+        .cross-icon { color: #e74c3c; font-weight: bold; }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .feature-card {
+            background: #fff;
+            padding: 20px;
+            border-radius: 4px;
+            border: 1px solid #eee;
+        }
+
+        .feature-title {
+            font-weight: 600;
+            color: #8e44ad;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .price-block {
+            background: #2c3e50;
+            color: #fff;
+            padding: 30px;
+            border-radius: 4px;
+            margin-top: 40px;
+            text-align: right;
+        }
+
+        .price-tag {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.2em;
+            color: #f1c40f;
+        }
+
+        .contact-info {
+            margin-top: 50px;
+            text-align: center;
+            color: #777;
+            font-size: 0.9em;
+        }
+
+        a { color: #8e44ad; text-decoration: none; font-weight: 600; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div>
+            <h1>Shmukler Art Club</h1>
+            <div class="subtitle">Предложение по цифровой трансформации и автоматизации клуба</div>
+        </div>
+        <div style="text-align: right; font-size: 0.9em; color: #888;">
+            Дата: 26.01.2026<br>
+            Конфиденциально
+        </div>
+    </div>
+
+    <p>Мы провели аудит ваших текущих процессов (BotHelp + Prodamus + ручная модерация) и видим, что текущее решение сдерживает развитие клуба. Конструкторы вроде BotHelp хороши для старта, но на этапе масштабирования они становятся "узким горлышком".</p>
+
+    <div class="problem-box">
+        <strong>⚠️ Текущие проблемы (Диагноз):</strong>
+        <ul style="margin-top: 10px; margin-bottom: 0;">
+            <li><strong>Ручная модерация:</strong> Клиент оплатил, но ждет одобрения входа. Это убивает конверсию и создает негатив.</li>
+            <li><strong>"Костыли" с промокодами:</strong> Невозможность сделать автоматический подарок подписки или скидку без участия человека.</li>
+            <li><strong>Зависимость от платформы:</strong> BotHelp — это аренда чужого функционала. Если они поднимут цены или закроются, вы потеряете базу.</li>
+            <li><strong>Сложности с миграцией:</strong> Страх "тронуть, чтобы не сломалось".</li>
+        </ul>
+    </div>
+
+    <h2>1. Решение: Собственная платформа (Custom Code)</h2>
+    <p>Мы предлагаем уйти от конструкторов и разработать <strong>собственного Telegram-бота на Python</strong> с удобной Админ-панелью. Это ваша собственность, ваш код и ваши правила.</p>
+
+    <table class="comparison-table">
+        <thead>
+            <tr>
+                <th>Функция</th>
+                <th>BotHelp (Сейчас)</th>
+                <th>Наше решение (Python)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Вход в канал</td>
+                <td><span class="cross-icon">✕</span> Часто требует одобрения заявки</td>
+                <td><span class="check-icon">✓</span> Полный автомат (Оплата -> Ссылка -> Вход)</td>
+            </tr>
+            <tr>
+                <td>Контроль подписки</td>
+                <td><span class="cross-icon">✕</span> Ограничен</td>
+                <td><span class="check-icon">✓</span> Бот сам удаляет из канала, если подписка истекла</td>
+            </tr>
+            <tr>
+                <td>Подарочные сертификаты</td>
+                <td><span class="cross-icon">✕</span> Только вручную</td>
+                <td><span class="check-icon">✓</span> Генерация кодов в админ-меню</td>
+            </tr>
+            <tr>
+                <td>База данных</td>
+                <td><span class="cross-icon">✕</span> Внутри BotHelp (сложно выгрузить)</td>
+                <td><span class="check-icon">✓</span> Выгрузка Excel-отчета в чат</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>2. Функционал "под ключ"</h2>
+    
+    <div class="feature-grid">
+        <div class="feature-card">
+            <span class="feature-title">💎 Бесшовная автоматизация</span>
+            Интеграция с Prodamus. Как только проходит оплата, бот <strong>мгновенно</strong> присылает одноразовую ссылку на вход. Никаких "заявок" и ожиданий администратора.
+        </div>
+        <div class="feature-card">
+            <span class="feature-title">🎁 Система лояльности</span>
+            В Админ-панели вы сможете создавать промокоды:
+            <br>• <em>"Скидка 100% на месяц"</em> (для подарков)
+            <br>• <em>"Скидка 20% на год"</em> (для акций)
+            <br>Клиент просто вводит код боту и получает доступ.
+        </div>
+        <div class="feature-card">
+            <span class="feature-title">📢 Умные рассылки</span>
+            Рассылка гайдов, анонсов и PDF-файлов по всей базе или сегментам. С кнопками, картинками и красивым форматированием.
+        </div>
+        <div class="feature-card">
+            <span class="feature-title">🚀 Миграция без потерь</span>
+            Самый важный этап. Мы аккуратно перенесем текущую базу подписчиков в нового бота. Для пользователей это пройдет незаметно — они просто продолжат пользоваться клубом.
+        </div>
+    </div>
+
+    <h2>3. Админ-панель прямо в Telegram</h2>
+    <p>Мы экономим ваш бюджет и время: зачем отдельный сайт, если управлять клубом можно прямо в мессенджере? У администраторов появится специальное <strong>скрытое меню</strong>:</p>
+    <ul>
+        <li><strong>Управление пользователями:</strong> Поиск по ID/Нику, продление или бан в 2 клика.</li>
+        <li><strong>Статистика:</strong> Отчеты по выручке и новым подписчикам приходят сообщением по запросу.</li>
+        <li><strong>Рассылки:</strong> Вы пишете пост в бот, нажимаете "Отправить всем", и он улетает подписчикам.</li>
+        <li><strong>Промокоды:</strong> Генерация кодов на скидку прямо в чате.</li>
+        <li><strong>Выгрузка базы:</strong> Бот присылает Excel-файл со всеми подписчиками по команде.</li>
+    </ul>
+
+    <h2>4. Стоимость и Этапы</h2>
+
+    <div style="margin-bottom: 20px;">
+        <strong>Этап 1: Разработка ядра и Админ-меню</strong> (3-5 дней)<br>
+        Настройка серверов, разработка бота, интеграция платежей, система промокодов внутри бота.
+    </div>
+    <div style="margin-bottom: 20px;">
+        <strong>Этап 2: Миграция и Тестирование</strong> (2 дня)<br>
+        Перенос текущих пользователей BotHelp -> Новый Бот. Настройка рекуррентных платежей.
+    </div>
+
+    <div class="price-block">
+        <div>Стоимость разработки "под ключ":</div>
+        <div class="price-tag">60 000 ₽</div>
+        <div style="font-size: 0.8em; opacity: 0.8; margin-top: 10px;">
+            Включает 1 месяц технической поддержки.<br>
+            Срок реализации: 5-7 дней.
+        </div>
+    </div>
+
+    <div style="background: #eee; padding: 20px; margin-top: 30px; border-radius: 4px; font-size: 0.9em;">
+        <strong>P.S. О ребрендинге сайта:</strong><br>
+        Мы также заметили, что текущий сайт сделан на Tilda. При переходе на новый уровень клуба, мы готовы предложить разработку полноценного Web-портала, который будет синхронизирован с ботом (единый личный кабинет). Это можно обсудить отдельным этапом.
+    </div>
+
+    <div class="contact-info">
+        <p>Готовы провести демонстрацию и обсудить миграцию.</p>
+        <strong>NoFace Digital</strong><br>
+        <a href="https://noface.digital" style="color: #8e44ad; text-decoration: none;">noface.digital</a><br>
+        <a href="https://t.me/n0face_bot">Telegram: @n0face_bot</a> | +7 (920) 776-76-76<br>
+        <a href="https://t.me/nofacedigital" style="font-size: 0.9em; color: #888; text-decoration: none;">Канал: @nofacedigital</a>
+    </div>
+
+</body>
+</html>

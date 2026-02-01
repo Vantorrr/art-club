@@ -1,0 +1,21 @@
+# Telegram Bot
+aiogram==3.13.1
+aiohttp==3.10.8
+
+# Database
+sqlalchemy==2.0.35
+aiosqlite==0.20.0
+
+# Webhook Server
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic>=2.4.1,<2.10
+
+# Utils
+python-dotenv==1.0.1
+apscheduler==3.10.4
+openpyxl==3.1.5  # для экспорта в Excel
+python-multipart==0.0.20
+
+# Date/Time
+pytz==2024.2
