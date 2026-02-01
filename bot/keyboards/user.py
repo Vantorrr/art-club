@@ -61,7 +61,7 @@ def support_kb() -> InlineKeyboardMarkup:
     """Контакты поддержки"""
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="💬 Написать в поддержку", url="https://t.me/artishok_support")],
+            [InlineKeyboardButton(text="💬 Написать в поддержку", url="https://t.me/artishokcenter_info")],
             [InlineKeyboardButton(text="🌐 Сайт клуба", url="https://artishokcenter.ru/shmuklerartclub")],
             [InlineKeyboardButton(text="« Назад", callback_data="back_to_menu")]
         ]
