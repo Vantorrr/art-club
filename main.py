@@ -124,7 +124,8 @@ def run_webhook_server():
     set_bot(bot)
     
     host = os.getenv("WEBHOOK_HOST", "0.0.0.0")
-    port = int(os.getenv("WEBHOOK_PORT", 8000))
+    # Railway использует переменную PORT, fallback на WEBHOOK_PORT или 8000
+    port = int(os.getenv("PORT", os.getenv("WEBHOOK_PORT", "8000")))
     
     logger.info(f"Запуск webhook сервера на {host}:{port}")
     uvicorn.run(app, host=host, port=port)
