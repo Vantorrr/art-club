@@ -5,6 +5,7 @@ aiohttp==3.10.8
 # Database
 sqlalchemy==2.0.35
 aiosqlite==0.20.0
+asyncpg==0.29.0
 
 # Webhook Server
 fastapi==0.115.5
