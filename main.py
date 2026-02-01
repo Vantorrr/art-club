@@ -69,6 +69,9 @@ async def main():
     
     # Инициализация базы данных
     db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./artclub.db")
+    # Railway дает postgresql://, но нужен postgresql+asyncpg://
+    if db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     db = Database(db_url)
     
     # Регистрация роутеров (admin первым, чтобы команды не перехватывались)
@@ -109,6 +112,9 @@ def run_webhook_server():
     
     # Инициализация БД для webhook
     db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./artclub.db")
+    # Railway дает postgresql://, но нужен postgresql+asyncpg://
+    if db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     db = Database(db_url)
     set_database(db)
     
