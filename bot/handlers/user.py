@@ -19,8 +19,11 @@ class PromoState(StatesGroup):
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, db: Database):
+async def cmd_start(message: Message, db: Database, state: FSMContext):
     """Обработка команды /start"""
+    # Очищаем состояние (на случай если пользователь был в процессе ввода промокода)
+    await state.clear()
+    
     user = message.from_user
     
     # Добавляем пользователя в БД
@@ -53,8 +56,9 @@ async def cmd_start(message: Message, db: Database):
 
 
 @router.message(F.text == "💳 Купить подписку")
-async def buy_subscription(message: Message):
+async def buy_subscription(message: Message, state: FSMContext):
     """Показать тарифы"""
+    await state.clear()  # Очищаем состояние, если было
     await message.answer(
         "💳 <b>Выберите тариф подписки:</b>\n\n"
         "При подписке на 3+ месяца действуют скидки!\n"
@@ -138,8 +142,9 @@ async def check_payment_status(callback: CallbackQuery, db: Database):
 
 
 @router.message(F.text == "📊 Моя подписка")
-async def my_subscription(message: Message, db: Database):
+async def my_subscription(message: Message, db: Database, state: FSMContext):
     """Информация о подписке"""
+    await state.clear()  # Очищаем состояние, если было
     user = await db.get_user(message.from_user.id)
     
     if not user:
@@ -165,6 +170,23 @@ async def my_subscription(message: Message, db: Database):
             reply_markup=kb.subscription_plans_kb(),
             parse_mode="HTML"
         )
+
+
+@router.callback_query(F.data == "cancel")
+async def cancel_action(callback: CallbackQuery, state: FSMContext):
+    """Отмена текущего действия и возврат в главное меню"""
+    await state.clear()
+    
+    # Проверяем, является ли пользователь админом
+    admin_ids = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
+    is_admin = callback.from_user.id in admin_ids
+    
+    await callback.message.edit_text("❌ Действие отменено.")
+    await callback.message.answer(
+        "Главное меню:",
+        reply_markup=kb.main_menu_kb(is_admin=is_admin)
+    )
+    await callback.answer()
 
 
 @router.message(F.text == "🎁 Промокод")
@@ -249,8 +271,9 @@ async def process_promo_code(message: Message, state: FSMContext, db: Database):
 
 
 @router.message(F.text == "ℹ️ О клубе")
-async def about_club(message: Message):
+async def about_club(message: Message, state: FSMContext):
     """Информация о клубе"""
+    await state.clear()  # Очищаем состояние, если было
     await message.answer(
         "🎨 <b>О Shmukler Art Club</b>\n\n"
         "Shmukler art club — это закрытое сообщество, созданное Олей Шмуклер "
@@ -266,8 +289,9 @@ async def about_club(message: Message):
 
 
 @router.message(F.text == "📞 Поддержка")
-async def support(message: Message):
+async def support(message: Message, state: FSMContext):
     """Контакты поддержки"""
+    await state.clear()  # Очищаем состояние, если было
     await message.answer(
         "📞 <b>Связаться с нами:</b>\n\n"
         "Если у вас возникли вопросы или проблемы, "
@@ -278,8 +302,9 @@ async def support(message: Message):
 
 
 @router.message(F.text == "👨‍💼 Админ-панель")
-async def open_admin_panel(message: Message):
+async def open_admin_panel(message: Message, state: FSMContext):
     """Открытие админ-панели по кнопке"""
+    await state.clear()  # Очищаем состояние, если было
     admin_ids = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
     
     if message.from_user.id not in admin_ids:
