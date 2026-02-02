@@ -71,6 +71,21 @@ async def buy_subscription(message: Message, state: FSMContext, db: Database):
     )
 
 
+@router.message(F.text == "🎁 Купить в подарок")
+async def buy_gift_subscription(message: Message, state: FSMContext):
+    """Показать тарифы для подарочной подписки"""
+    await state.clear()
+    
+    await message.answer(
+        "🎁 <b>Подарочная подписка</b>\n\n"
+        "Выберите срок подписки для подарка.\n\n"
+        "После оплаты вы получите <b>уникальный код</b>, который сможете передать получателю.\n"
+        "Код активируется через бота в разделе «🎫 Промокод».",
+        reply_markup=kb.gift_plans_kb(),
+        parse_mode="HTML"
+    )
+
+
 @router.callback_query(F.data.startswith("buy:"))
 async def process_plan_selection(callback: CallbackQuery, db: Database):
     """Обработка выбора тарифа"""
@@ -124,6 +139,64 @@ async def process_plan_selection(callback: CallbackQuery, db: Database):
         f"Стоимость: <b>{plan_info['price']} ₽</b>\n\n"
         f"Нажмите кнопку ниже для перехода к оплате.\n"
         f"После успешной оплаты вам автоматически придет инвайт-ссылка в канал клуба.",
+        reply_markup=kb.payment_kb(payment_url),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("gift:"))
+async def process_gift_plan_selection(callback: CallbackQuery, db: Database):
+    """Обработка выбора тарифа для подарка"""
+    plan = callback.data.split(":")[1]
+    
+    # Маппинг тарифов (такой же как для обычной подписки)
+    plans_config = {
+        "1_month": {"months": 1, "price": int(os.getenv("PRICE_1_MONTH", 3500)), "name": "1 месяц"},
+        "3_months": {"months": 3, "price": int(os.getenv("PRICE_3_MONTHS", 9450)), "name": "3 месяца"},
+        "6_months": {"months": 6, "price": int(os.getenv("PRICE_6_MONTHS", 17850)), "name": "6 месяцев"},
+        "12_months": {"months": 12, "price": int(os.getenv("PRICE_12_MONTHS", 33600)), "name": "12 месяцев"}
+    }
+    
+    if plan not in plans_config:
+        await callback.answer("❌ Неверный тариф", show_alert=True)
+        return
+    
+    plan_info = plans_config[plan]
+    user_id = callback.from_user.id
+    
+    # Генерируем уникальный order_id с пометкой GIFT
+    import time
+    order_id = f"gift_{user_id}_{int(time.time())}"
+    
+    # Создаем запись о платеже в БД (статус pending, помечаем как подарок)
+    await db.add_payment(
+        user_id=user_id,
+        order_id=order_id,
+        amount=plan_info['price'],
+        subscription_plan=f"gift_{plan}",  # Помечаем как подарок
+        duration_months=plan_info['months'],
+        status="pending"
+    )
+    
+    # Генерируем ссылку на оплату Prodamus
+    prodamus_base_url = os.getenv("PRODAMUS_BASE_URL", "https://artclub.pay.prodamus.ru")
+    payment_url = (
+        f"{prodamus_base_url}?"
+        f"order_id={order_id}&"
+        f"customer_extra={user_id}&"
+        f"products[0][price]={plan_info['price']}&"
+        f"products[0][name]=Подарочная подписка {plan_info['name']}&"
+        f"products[0][quantity]=1&"
+        f"do=pay"
+    )
+    
+    await callback.message.edit_text(
+        f"🎁 <b>Оплата подарочной подписки</b>\n\n"
+        f"Тариф: <b>{plan_info['name']}</b>\n"
+        f"Стоимость: <b>{plan_info['price']} ₽</b>\n\n"
+        f"После оплаты вы получите <b>уникальный промокод</b>.\n"
+        f"Передайте его получателю подарка — он активирует код в боте.",
         reply_markup=kb.payment_kb(payment_url),
         parse_mode="HTML"
     )
@@ -192,7 +265,7 @@ async def cancel_action(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.message(F.text == "🎁 Промокод")
+@router.message(F.text == "🎫 Промокод")
 async def activate_promo_start(message: Message, state: FSMContext):
     """Начало активации промокода"""
     await state.set_state(PromoState.waiting_for_code)
@@ -208,7 +281,7 @@ async def activate_promo_start(message: Message, state: FSMContext):
 async def process_promo_code(message: Message, state: FSMContext, db: Database):
     """Обработка введенного промокода"""
     # Игнорируем кнопки меню - они обрабатываются своими хэндлерами
-    menu_buttons = ["💳 Купить подписку", "📊 Моя подписка", "🎁 Промокод", 
+    menu_buttons = ["💳 Купить подписку", "🎁 Купить в подарок", "📊 Моя подписка", "🎫 Промокод", 
                     "ℹ️ О клубе", "📞 Поддержка", "👨‍💼 Админ-панель"]
     
     if message.text in menu_buttons:

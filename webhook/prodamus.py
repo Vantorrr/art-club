@@ -61,8 +61,15 @@ async def prodamus_webhook(request: Request):
             logger.info(f"Платеж {webhook_data.order_id} не успешный: {webhook_data.payment_status}")
             return {"status": "ok", "message": "Payment not successful"}
         
+        # Определяем тип платежа (обычная подписка или подарок)
+        is_gift = webhook_data.order_id.startswith("gift_")
+        
         # Получаем данные о подписке
         plan = webhook_data.subscription_plan or "1_month"
+        # Убираем префикс gift_ из плана если есть
+        if plan.startswith("gift_"):
+            plan = plan.replace("gift_", "")
+        
         plans = get_plan_config()
         
         if plan not in plans:
@@ -77,31 +84,70 @@ async def prodamus_webhook(request: Request):
                 user_id=webhook_data.user_id,
                 order_id=webhook_data.order_id,
                 amount=webhook_data.order_sum,
-                subscription_plan=plan,
+                subscription_plan=f"gift_{plan}" if is_gift else plan,
                 duration_months=plan_info["months"],
                 status="success"
             )
             
-            # Активируем подписку
-            expires_at = datetime.utcnow() + timedelta(days=30 * plan_info["months"])
-            
-            await db.add_subscription(
-                user_id=webhook_data.user_id,
-                duration_months=plan_info["months"],
-                expires_at=expires_at,
-                activated_by="payment"
-            )
-            
-            # Отправляем инвайт-ссылку пользователю
-            logger.info(
-                f"✅ Платеж успешно обработан. User: {webhook_data.user_id}, "
-                f"Plan: {plan}, Expires: {expires_at}. Отправка инвайт-ссылки..."
-            )
-            
-            # Отправляем инвайт-ссылку
-            if bot:
-                channel_id = int(os.getenv("MAIN_CHANNEL_ID", 0))
-                await send_invite_to_user(bot, webhook_data.user_id, channel_id, expires_at)
+            if is_gift:
+                # ===== ПОДАРОЧНАЯ ПОДПИСКА =====
+                # Создаем уникальный промокод
+                import random
+                gift_code = f"GIFT_{random.randint(100000, 999999)}"
+                
+                await db.create_promocode(
+                    code=gift_code,
+                    discount_type="free",
+                    discount_value=100,
+                    duration_months=plan_info["months"],
+                    max_uses=1,
+                    created_by=webhook_data.user_id,
+                    is_gift=True
+                    # for_username не указываем - подарок для любого
+                )
+                
+                logger.info(
+                    f"🎁 Подарочная подписка создана. Buyer: {webhook_data.user_id}, "
+                    f"Code: {gift_code}, Duration: {plan_info['months']} мес."
+                )
+                
+                # Отправляем код дарителю
+                if bot:
+                    await bot.send_message(
+                        webhook_data.user_id,
+                        f"🎁 <b>Подарочная подписка оплачена!</b>\n\n"
+                        f"Ваш уникальный код:\n"
+                        f"<code>{gift_code}</code>\n\n"
+                        f"📅 Срок подписки: <b>{plan_info['months']} мес.</b>\n\n"
+                        f"📤 <b>Как подарить:</b>\n"
+                        f"1. Скопируйте код выше\n"
+                        f"2. Отправьте его получателю\n"
+                        f"3. Получатель вводит код в боте → «🎫 Промокод»\n\n"
+                        f"✅ После активации получатель сразу получит доступ в клуб!",
+                        parse_mode="HTML"
+                    )
+            else:
+                # ===== ОБЫЧНАЯ ПОДПИСКА =====
+                # Активируем подписку
+                expires_at = datetime.utcnow() + timedelta(days=30 * plan_info["months"])
+                
+                await db.add_subscription(
+                    user_id=webhook_data.user_id,
+                    duration_months=plan_info["months"],
+                    expires_at=expires_at,
+                    activated_by="payment"
+                )
+                
+                # Отправляем инвайт-ссылку пользователю
+                logger.info(
+                    f"✅ Платеж успешно обработан. User: {webhook_data.user_id}, "
+                    f"Plan: {plan}, Expires: {expires_at}. Отправка инвайт-ссылки..."
+                )
+                
+                # Отправляем инвайт-ссылку
+                if bot:
+                    channel_id = int(os.getenv("MAIN_CHANNEL_ID", 0))
+                    await send_invite_to_user(bot, webhook_data.user_id, channel_id, expires_at)
         
         return {
             "status": "ok",
