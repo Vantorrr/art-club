@@ -312,8 +312,33 @@ async def save_edited_text(message: Message, db: Database, state: FSMContext):
 async def cancel_text_edit(callback: CallbackQuery, db: Database, state: FSMContext):
     """Отмена редактирования текста"""
     await state.clear()
-    await callback.message.delete()
-    await show_texts_list(callback.message, db)
+    
+    # Получаем список текстов
+    texts = await db.get_all_texts()
+    
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    
+    buttons = []
+    for text_obj in texts:
+        short_desc = text_obj.description[:40] + "..." if len(text_obj.description) > 40 else text_obj.description
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"✏️ {short_desc}",
+                callback_data=f"edit_text:{text_obj.key}"
+            )
+        ])
+    
+    buttons.append([InlineKeyboardButton(text="« Назад", callback_data="admin:menu")])
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    
+    await callback.message.edit_text(
+        "✏️ <b>Редактирование текстов бота</b>\n\n"
+        "Выберите текст, который хотите изменить:\n\n"
+        "<i>💡 Изменения применятся сразу для всех пользователей</i>",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
     await callback.answer("❌ Редактирование отменено")
 
 
@@ -413,8 +438,11 @@ async def create_gift_start(callback: CallbackQuery, state: FSMContext):
     await state.set_state(GiftCreationState.waiting_for_recipient)
     await callback.message.edit_text(
         "🎁 <b>Создание подарочной подписки</b>\n\n"
-        "Введите Telegram ID получателя подарка:\n\n"
-        "<i>💡 Чтобы узнать ID пользователя, найдите его в разделе \"👥 Пользователи\"</i>",
+        "Введите @username или Telegram ID получателя:\n\n"
+        "Примеры:\n"
+        "• <code>@ivan_petrov</code> — для конкретного пользователя\n"
+        "• <code>123456789</code> — по Telegram ID\n\n"
+        "<i>💡 Если пользователя еще нет в базе, код активируется при его первом заходе в бота</i>",
         parse_mode="HTML"
     )
     await callback.answer()
@@ -422,29 +450,55 @@ async def create_gift_start(callback: CallbackQuery, state: FSMContext):
 
 @router.message(GiftCreationState.waiting_for_recipient)
 async def receive_gift_recipient(message: Message, state: FSMContext, db: Database):
-    """Получение ID получателя подарка"""
+    """Получение @username или ID получателя подарка"""
     if not is_admin(message.from_user.id):
         return
     
-    # Проверяем что введен корректный ID
-    try:
-        recipient_id = int(message.text)
-    except ValueError:
-        await message.answer("❌ Введите корректный Telegram ID (число)")
-        return
+    input_text = message.text.strip()
+    recipient_id = None
+    recipient_username = None
+    user = None
     
-    # Проверяем существует ли пользователь
-    user = await db.get_user(recipient_id)
-    if not user:
-        await message.answer(
-            f"⚠️ Пользователь с ID {recipient_id} не найден в базе.\n\n"
-            "Создать подарок для нового пользователя?"
-        )
+    # Проверяем что это - @username или ID
+    if input_text.startswith("@"):
+        # Это username
+        recipient_username = input_text[1:].lower()  # Убираем @ и делаем lowercase
+        
+        # Ищем в базе
+        from sqlalchemy import select
+        from bot.database.models import User
+        async with db.session_maker() as session:
+            result = await session.execute(
+                select(User).where(User.username == recipient_username)
+            )
+            user = result.scalar_one_or_none()
+        
+        if user:
+            recipient_id = user.id
+            await state.update_data(recipient_id=recipient_id, recipient_username=recipient_username)
+            user_info = f"@{recipient_username} (найден в базе)"
+        else:
+            await state.update_data(recipient_username=recipient_username)
+            user_info = f"@{recipient_username} (код активируется при первом заходе)"
+    else:
+        # Пытаемся как ID
+        try:
+            recipient_id = int(input_text)
+            user = await db.get_user(recipient_id)
+            
+            if user and user.username:
+                recipient_username = user.username
+                await state.update_data(recipient_id=recipient_id, recipient_username=recipient_username)
+                user_info = f"@{user.username}"
+            else:
+                await state.update_data(recipient_id=recipient_id)
+                user_info = f"ID {recipient_id}"
+        except ValueError:
+            await message.answer("❌ Введите @username или Telegram ID (число)")
+            return
     
-    await state.update_data(recipient_id=recipient_id)
     await state.set_state(GiftCreationState.waiting_for_duration)
     
-    user_info = f"@{user.username}" if user and user.username else f"ID {recipient_id}"
     await message.answer(
         f"✅ Получатель: {user_info}\n\n"
         "Выберите срок подарочной подписки (в месяцах):\n"
@@ -469,7 +523,8 @@ async def receive_gift_duration(message: Message, state: FSMContext, db: Databas
         return
     
     data = await state.get_data()
-    recipient_id = data['recipient_id']
+    recipient_id = data.get('recipient_id')
+    recipient_username = data.get('recipient_username')
     
     # Генерируем уникальный промокод
     gift_code = f"GIFT_{random.randint(100000, 999999)}"
@@ -483,14 +538,20 @@ async def receive_gift_duration(message: Message, state: FSMContext, db: Databas
         max_uses=1,
         created_by=message.from_user.id,
         is_gift=True,
-        for_user_id=recipient_id
+        for_user_id=recipient_id,
+        for_username=recipient_username
     )
     
     await state.clear()
     
-    # Получаем информацию о получателе
-    user = await db.get_user(recipient_id)
-    user_info = f"@{user.username}" if user and user.username else f"ID {recipient_id}"
+    # Формируем информацию о получателе
+    if recipient_username:
+        user_info = f"@{recipient_username}"
+    elif recipient_id:
+        user = await db.get_user(recipient_id)
+        user_info = f"@{user.username}" if user and user.username else f"ID {recipient_id}"
+    else:
+        user_info = "Любой пользователь"
     
     await message.answer(
         f"✅ <b>Подарочная подписка создана!</b>\n\n"

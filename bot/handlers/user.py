@@ -237,13 +237,24 @@ async def process_promo_code(message: Message, state: FSMContext, db: Database):
         return
     
     # Проверка для подарочных промокодов
-    if promo.is_gift and promo.for_user_id:
-        if promo.for_user_id != message.from_user.id:
-            await message.answer(
-                "❌ Этот промокод предназначен для другого пользователя.\n\n"
-                "Подарочные промокоды можно активировать только тому, кому они предназначены."
-            )
-            return
+    if promo.is_gift:
+        # Проверяем по username (приоритет)
+        if promo.for_username:
+            user_username = message.from_user.username.lower() if message.from_user.username else None
+            if user_username != promo.for_username.lower():
+                await message.answer(
+                    f"❌ Этот промокод предназначен для @{promo.for_username}\n\n"
+                    "Подарочные промокоды можно активировать только тому, кому они предназначены."
+                )
+                return
+        # Проверяем по ID (если username не указан)
+        elif promo.for_user_id:
+            if promo.for_user_id != message.from_user.id:
+                await message.answer(
+                    "❌ Этот промокод предназначен для другого пользователя.\n\n"
+                    "Подарочные промокоды можно активировать только тому, кому они предназначены."
+                )
+                return
     
     # Активируем промокод
     user = await db.get_user(message.from_user.id)

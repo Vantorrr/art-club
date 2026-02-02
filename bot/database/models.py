@@ -77,7 +77,8 @@ class Promocode(Base):
     used_count: Mapped[int] = mapped_column(Integer, default=0)
     
     # Подарочный промокод (для конкретного пользователя)
-    for_user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)  # ID получателя подарка
+    for_user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)  # ID получателя подарка (если известен)
+    for_username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # @username получателя
     is_gift: Mapped[bool] = mapped_column(Boolean, default=False)  # флаг подарочного промокода
     
     # Срок действия

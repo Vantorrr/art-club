@@ -153,7 +153,8 @@ class Database:
         valid_until: datetime = None,
         created_by: int = 0,
         is_gift: bool = False,
-        for_user_id: int = None
+        for_user_id: int = None,
+        for_username: str = None
     ) -> Promocode:
         """Создать промокод"""
         async with self.session_maker() as session:
@@ -166,7 +167,8 @@ class Database:
                 valid_until=valid_until,
                 created_by=created_by,
                 is_gift=is_gift,
-                for_user_id=for_user_id
+                for_user_id=for_user_id,
+                for_username=for_username
             )
             session.add(promocode)
             await session.commit()
