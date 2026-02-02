@@ -46,6 +46,12 @@ class PromoCreationState(StatesGroup):
     waiting_for_max_uses = State()
 
 
+class GiftCreationState(StatesGroup):
+    """Состояния для создания подарочной подписки"""
+    waiting_for_recipient = State()
+    waiting_for_duration = State()
+
+
 @router.message(Command("admin"))
 async def admin_panel(message: Message):
     """Вход в админ-панель"""
@@ -263,6 +269,104 @@ async def promo_menu(message: Message):
         "🎁 <b>Управление промокодами</b>\n\n"
         "Выберите действие:",
         reply_markup=kb.promo_actions_kb(),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data == "admin:create_gift")
+async def create_gift_start(callback: CallbackQuery, state: FSMContext):
+    """Начало создания подарочной подписки"""
+    if not is_admin(callback.from_user.id):
+        return
+    
+    await state.set_state(GiftCreationState.waiting_for_recipient)
+    await callback.message.edit_text(
+        "🎁 <b>Создание подарочной подписки</b>\n\n"
+        "Введите Telegram ID получателя подарка:\n\n"
+        "<i>💡 Чтобы узнать ID пользователя, найдите его в разделе \"👥 Пользователи\"</i>",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(GiftCreationState.waiting_for_recipient)
+async def receive_gift_recipient(message: Message, state: FSMContext, db: Database):
+    """Получение ID получателя подарка"""
+    if not is_admin(message.from_user.id):
+        return
+    
+    # Проверяем что введен корректный ID
+    try:
+        recipient_id = int(message.text)
+    except ValueError:
+        await message.answer("❌ Введите корректный Telegram ID (число)")
+        return
+    
+    # Проверяем существует ли пользователь
+    user = await db.get_user(recipient_id)
+    if not user:
+        await message.answer(
+            f"⚠️ Пользователь с ID {recipient_id} не найден в базе.\n\n"
+            "Создать подарок для нового пользователя?"
+        )
+    
+    await state.update_data(recipient_id=recipient_id)
+    await state.set_state(GiftCreationState.waiting_for_duration)
+    
+    user_info = f"@{user.username}" if user and user.username else f"ID {recipient_id}"
+    await message.answer(
+        f"✅ Получатель: {user_info}\n\n"
+        "Выберите срок подарочной подписки (в месяцах):\n"
+        "1, 3, 6, 9 или 12",
+        parse_mode="HTML"
+    )
+
+
+@router.message(GiftCreationState.waiting_for_duration)
+async def receive_gift_duration(message: Message, state: FSMContext, db: Database):
+    """Получение срока подарочной подписки"""
+    if not is_admin(message.from_user.id):
+        return
+    
+    # Проверяем корректность срока
+    try:
+        duration = int(message.text)
+        if duration not in [1, 3, 6, 9, 12]:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введите один из доступных тарифов: 1, 3, 6, 9 или 12 месяцев")
+        return
+    
+    data = await state.get_data()
+    recipient_id = data['recipient_id']
+    
+    # Генерируем уникальный промокод
+    gift_code = f"GIFT_{random.randint(100000, 999999)}"
+    
+    # Создаем подарочный промокод в БД
+    await db.create_promocode(
+        code=gift_code,
+        discount_type="free",
+        discount_value=100,
+        duration_months=duration,
+        max_uses=1,
+        created_by=message.from_user.id,
+        is_gift=True,
+        for_user_id=recipient_id
+    )
+    
+    await state.clear()
+    
+    # Получаем информацию о получателе
+    user = await db.get_user(recipient_id)
+    user_info = f"@{user.username}" if user and user.username else f"ID {recipient_id}"
+    
+    await message.answer(
+        f"✅ <b>Подарочная подписка создана!</b>\n\n"
+        f"📝 Код: <code>{gift_code}</code>\n"
+        f"👤 Получатель: {user_info}\n"
+        f"📅 Срок: {duration} мес.\n\n"
+        f"💡 Отправьте этот код получателю. Он сможет активировать его через бота в разделе \"🎁 Активировать промокод\"",
         parse_mode="HTML"
     )
 

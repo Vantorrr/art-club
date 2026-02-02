@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timedelta
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -8,6 +8,7 @@ from aiogram.fsm.state import State, StatesGroup
 
 from bot.database import Database
 from bot.keyboards import user as kb
+from bot.utils.invite import send_invite_to_user
 
 
 router = Router()
@@ -233,6 +234,15 @@ async def process_promo_code(message: Message, state: FSMContext, db: Database):
         await message.answer("❌ Достигнут лимит использований промокода.")
         return
     
+    # Проверка для подарочных промокодов
+    if promo.is_gift and promo.for_user_id:
+        if promo.for_user_id != message.from_user.id:
+            await message.answer(
+                "❌ Этот промокод предназначен для другого пользователя.\n\n"
+                "Подарочные промокоды можно активировать только тому, кому они предназначены."
+            )
+            return
+    
     # Активируем промокод
     user = await db.get_user(message.from_user.id)
     
@@ -250,14 +260,19 @@ async def process_promo_code(message: Message, state: FSMContext, db: Database):
         
         await db.use_promocode(code)
         
-        # Генерируем инвайт-ссылку (TODO: реальная генерация)
-        invite_link = "https://t.me/+EXAMPLE_INVITE_LINK"
+        # Отправляем инвайт-ссылку пользователю
+        channel_id = int(os.getenv("MAIN_CHANNEL_ID"))
+        await send_invite_to_user(message.bot, user.id, channel_id, expires_at)
+        
+        gift_note = ""
+        if promo.is_gift:
+            gift_note = "\n🎁 <i>Это подарочная подписка!</i>"
         
         await message.answer(
-            f"🎉 <b>Промокод активирован!</b>\n\n"
+            f"🎉 <b>Промокод активирован!</b>{gift_note}\n\n"
             f"Вам предоставлена бесплатная подписка на {promo.duration_months} мес.\n"
             f"Действует до: <b>{expires_at.strftime('%d.%m.%Y')}</b>\n\n"
-            f"🔗 Ссылка для входа в канал:\n{invite_link}",
+            f"Инвайт-ссылка отправлена выше ⬆️",
             parse_mode="HTML"
         )
         

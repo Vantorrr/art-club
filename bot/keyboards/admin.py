@@ -33,6 +33,7 @@ def promo_actions_kb() -> InlineKeyboardMarkup:
     """Действия с промокодами"""
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
+            [InlineKeyboardButton(text="🎁 Создать подарочную подписку", callback_data="admin:create_gift")],
             [InlineKeyboardButton(text="➕ Создать промокод", callback_data="admin:create_promo")],
             [InlineKeyboardButton(text="📋 Список промокодов", callback_data="admin:list_promos")],
             [InlineKeyboardButton(text="« Назад", callback_data="admin:menu")]

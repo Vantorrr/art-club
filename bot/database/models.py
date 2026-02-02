@@ -76,6 +76,10 @@ class Promocode(Base):
     max_uses: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # макс. использований
     used_count: Mapped[int] = mapped_column(Integer, default=0)
     
+    # Подарочный промокод (для конкретного пользователя)
+    for_user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)  # ID получателя подарка
+    is_gift: Mapped[bool] = mapped_column(Boolean, default=False)  # флаг подарочного промокода
+    
     # Срок действия
     valid_from: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     valid_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

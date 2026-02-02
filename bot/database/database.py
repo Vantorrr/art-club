@@ -151,7 +151,9 @@ class Database:
         duration_months: int,
         max_uses: int = None,
         valid_until: datetime = None,
-        created_by: int = 0
+        created_by: int = 0,
+        is_gift: bool = False,
+        for_user_id: int = None
     ) -> Promocode:
         """Создать промокод"""
         async with self.session_maker() as session:
@@ -162,7 +164,9 @@ class Database:
                 duration_months=duration_months,
                 max_uses=max_uses,
                 valid_until=valid_until,
-                created_by=created_by
+                created_by=created_by,
+                is_gift=is_gift,
+                for_user_id=for_user_id
             )
             session.add(promocode)
             await session.commit()
