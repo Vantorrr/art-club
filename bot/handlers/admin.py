@@ -80,8 +80,10 @@ async def back_to_admin_menu(callback: CallbackQuery, state: FSMContext):
         return
     
     await state.clear()  # Очищаем состояние
+    chat_id = callback.message.chat.id
     await callback.message.delete()
-    await callback.message.answer(
+    await callback.bot.send_message(
+        chat_id,
         "👨‍💼 <b>Админ-панель Shmukler Art Club</b>\n\n"
         "Выберите действие:",
         reply_markup=kb.admin_menu_kb(),
