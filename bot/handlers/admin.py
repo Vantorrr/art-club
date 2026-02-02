@@ -72,6 +72,81 @@ async def admin_panel(message: Message):
     )
 
 
+@router.callback_query(F.data == "admin:menu")
+async def back_to_admin_menu(callback: CallbackQuery, state: FSMContext):
+    """Возврат в админ-панель (инлайн кнопка Назад)"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Нет доступа", show_alert=True)
+        return
+    
+    await state.clear()  # Очищаем состояние
+    await callback.message.delete()
+    await callback.message.answer(
+        "👨‍💼 <b>Админ-панель Shmukler Art Club</b>\n\n"
+        "Выберите действие:",
+        reply_markup=kb.admin_menu_kb(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:promos")
+async def back_to_promos_menu(callback: CallbackQuery, state: FSMContext):
+    """Возврат в меню промокодов"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Нет доступа", show_alert=True)
+        return
+    
+    await state.clear()
+    await callback.message.edit_text(
+        "🎁 <b>Управление промокодами</b>\n\n"
+        "Выберите действие:",
+        reply_markup=kb.promo_actions_kb(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:users_list")
+async def back_to_users_list(callback: CallbackQuery, db: Database):
+    """Возврат к списку пользователей"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Нет доступа", show_alert=True)
+        return
+    
+    # Получаем пользователей и показываем список
+    users = await db.get_all_users()
+    
+    if not users:
+        await callback.message.edit_text("📭 Пользователей пока нет.")
+        await callback.answer()
+        return
+    
+    text = "👥 <b>Все пользователи:</b>\n\n"
+    users_sorted = sorted(users, key=lambda u: (not u.is_subscribed, u.id))
+    
+    for i, user in enumerate(users_sorted[:30], 1):
+        status = "✅" if user.is_subscribed else "❌"
+        if user.username:
+            name = f"@{user.username}"
+        elif user.first_name:
+            name = user.first_name
+        else:
+            name = "Без имени"
+        
+        if user.is_subscribed and user.subscription_until:
+            days_left = (user.subscription_until - datetime.utcnow()).days
+            name += f" ({days_left}д.)"
+        
+        text += f"{status} {name}\n"
+    
+    if len(users) > 30:
+        text += f"\n... и еще {len(users) - 30} пользователей"
+    
+    await callback.message.edit_text(text, parse_mode="HTML")
+    await callback.answer()
+
+
 @router.message(Command("test_notifications"))
 async def test_notifications(message: Message):
     """Тестирование уведомлений (только для админов)"""
