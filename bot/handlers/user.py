@@ -434,9 +434,15 @@ async def back_to_menu(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data == "cancel")
-async def cancel_action(callback: CallbackQuery, state: FSMContext):
-    """Отмена действия"""
+@router.callback_query(F.data == "cancel_payment")
+async def cancel_payment(callback: CallbackQuery, state: FSMContext):
+    """Отмена оплаты"""
     await state.clear()
-    await callback.message.delete()
-    await callback.answer("Действие отменено")
+    await callback.message.edit_text("❌ Оплата отменена.")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "noop")
+async def noop_handler(callback: CallbackQuery):
+    """Пустой обработчик для кнопок-заглушек"""
+    await callback.answer()
