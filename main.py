@@ -36,7 +36,7 @@ async def on_startup(bot: Bot, db: Database):
     await db.init_db()
     logger.info("База данных инициализирована")
     
-    # Автоматическая миграция: добавление поля for_username (если нужно)
+    # Автоматическая миграция для PostgreSQL
     try:
         from sqlalchemy import text
         async with db.engine.begin() as conn:
@@ -45,21 +45,26 @@ async def on_startup(bot: Bot, db: Database):
             version = result.scalar()
             
             if 'PostgreSQL' in version:
-                # Проверяем существует ли поле
-                result = await conn.execute(text(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_name='promocodes' AND column_name='for_username'"
-                ))
-                exists = result.fetchone()
+                # Список полей для миграции
+                migrations = [
+                    ("for_username", "VARCHAR(100)"),
+                    ("for_user_id", "BIGINT"),
+                    ("is_gift", "BOOLEAN DEFAULT FALSE")
+                ]
                 
-                if not exists:
-                    logger.info("Выполняется миграция: добавление for_username...")
-                    await conn.execute(text(
-                        "ALTER TABLE promocodes ADD COLUMN for_username VARCHAR(100)"
+                for col_name, col_type in migrations:
+                    result = await conn.execute(text(
+                        f"SELECT column_name FROM information_schema.columns "
+                        f"WHERE table_name='promocodes' AND column_name='{col_name}'"
                     ))
-                    logger.info("✅ Миграция завершена")
+                    if not result.fetchone():
+                        logger.info(f"Миграция: добавление {col_name}...")
+                        await conn.execute(text(
+                            f"ALTER TABLE promocodes ADD COLUMN {col_name} {col_type}"
+                        ))
+                        logger.info(f"✅ {col_name} добавлен")
     except Exception as e:
-        logger.warning(f"Миграция пропущена (возможно SQLite или уже выполнена): {e}")
+        logger.warning(f"Миграция пропущена: {e}")
     
     # Инициализация дефолтных текстов (если их еще нет)
     texts = await db.get_all_texts()
