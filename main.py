@@ -36,6 +36,31 @@ async def on_startup(bot: Bot, db: Database):
     await db.init_db()
     logger.info("База данных инициализирована")
     
+    # Автоматическая миграция: добавление поля for_username (если нужно)
+    try:
+        from sqlalchemy import text
+        async with db.engine.begin() as conn:
+            # Проверяем PostgreSQL
+            result = await conn.execute(text("SELECT version()"))
+            version = result.scalar()
+            
+            if 'PostgreSQL' in version:
+                # Проверяем существует ли поле
+                result = await conn.execute(text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name='promocodes' AND column_name='for_username'"
+                ))
+                exists = result.fetchone()
+                
+                if not exists:
+                    logger.info("Выполняется миграция: добавление for_username...")
+                    await conn.execute(text(
+                        "ALTER TABLE promocodes ADD COLUMN for_username VARCHAR(100)"
+                    ))
+                    logger.info("✅ Миграция завершена")
+    except Exception as e:
+        logger.warning(f"Миграция пропущена (возможно SQLite или уже выполнена): {e}")
+    
     # Инициализация дефолтных текстов (если их еще нет)
     texts = await db.get_all_texts()
     if not texts:
