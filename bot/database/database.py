@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import selectinload
 
-from .models import Base, User, Subscription, Promocode, Payment, Broadcast
+from .models import Base, User, Subscription, Promocode, Payment, Broadcast, BotText
 
 
 class Database:
@@ -306,3 +306,99 @@ class Database:
                 "active_subscribers": active_subs,
                 "total_revenue": total_revenue
             }
+
+    # ============ BOT TEXTS ============
+
+    async def get_text(self, key: str, default: str = "") -> str:
+        """Получить текст по ключу"""
+        async with self.session_maker() as session:
+            result = await session.execute(
+                select(BotText).where(BotText.key == key)
+            )
+            text_obj = result.scalar_one_or_none()
+            return text_obj.text if text_obj else default
+
+    async def set_text(self, key: str, text: str, description: str = "", updated_by: int = None) -> BotText:
+        """Установить или обновить текст"""
+        async with self.session_maker() as session:
+            result = await session.execute(
+                select(BotText).where(BotText.key == key)
+            )
+            text_obj = result.scalar_one_or_none()
+            
+            if text_obj:
+                text_obj.text = text
+                text_obj.updated_at = datetime.utcnow()
+                text_obj.updated_by = updated_by
+            else:
+                text_obj = BotText(
+                    key=key,
+                    text=text,
+                    description=description,
+                    updated_by=updated_by
+                )
+                session.add(text_obj)
+            
+            await session.commit()
+            await session.refresh(text_obj)
+            return text_obj
+
+    async def get_all_texts(self) -> List[BotText]:
+        """Получить все тексты"""
+        async with self.session_maker() as session:
+            result = await session.execute(select(BotText).order_by(BotText.key))
+            return list(result.scalars().all())
+
+    async def init_default_texts(self):
+        """Инициализация дефолтных текстов"""
+        default_texts = {
+            "welcome_message": {
+                "text": "👋 Добро пожаловать в <b>Shmukler Art Club</b>!\n\n"
+                       "Это закрытое сообщество для тех, кто хочет глубже понимать искусство и быть в курсе главных культурных событий.\n\n"
+                       "🎨 <b>Что входит в клуб:</b>\n"
+                       "• Частные экскурсии и арт-туры\n"
+                       "• Посещение мастерских художников\n"
+                       "• Онлайн-лекции от Оли Шмуклер\n"
+                       "• Подборки выставок и событий\n"
+                       "• Бесплатный арт-консалтинг\n"
+                       "• Скидка 15% на покупку произведений искусства\n\n"
+                       "Выберите действие:",
+                "description": "Приветственное сообщение при /start"
+            },
+            "about_club": {
+                "text": "🎨 <b>О Shmukler Art Club</b>\n\n"
+                       "Shmukler art club — это закрытое сообщество, созданное Олей Шмуклер и командой культурного центра Артишок.\n\n"
+                       "<b>Наша миссия:</b>\n"
+                       "Объединить людей, которые хотят видеть, понимать, чувствовать искусство глубже, стремиться к новым визуальным и смысловым открытиям.\n\n"
+                       "<b>Основательница:</b>\n"
+                       "Оля Шмуклер — искусствовед, куратор, лектор с многолетним опытом в арт-индустрии.\n\n"
+                       "Подробнее: https://artishokcenter.ru/shmuklerartclub",
+                "description": "Описание клуба (кнопка 'О клубе')"
+            },
+            "subscription_plans": {
+                "text": "💳 <b>Выберите тариф подписки:</b>\n\n"
+                       "При подписке на 3+ месяца действуют скидки!\n"
+                       "Все новые участники получают скидку 15% на покупку произведений искусства.",
+                "description": "Описание тарифов и акций (над кнопками тарифов)"
+            },
+            "reminder_3days": {
+                "text": "💳 <b>Напоминание о продлении подписки</b>\n\n"
+                       "Через <b>3 дня</b> с вашей карты автоматически спишется оплата за следующий период.\n\n"
+                       "🔄 <b>Подписка продлится автоматически</b>\n"
+                       "Вам ничего не нужно делать.\n\n"
+                       "⚠️ Пожалуйста, убедитесь, что на карте достаточно средств для списания.\n\n"
+                       "<i>Если хотите отменить подписку или изменить тариф, используйте кнопки ниже.</i>",
+                "description": "Уведомление за 3 дня до истечения подписки"
+            },
+            "subscription_expired": {
+                "text": "⏰ <b>Подписка не продлена</b>\n\n"
+                       "Автоматическое продление не прошло (возможно, недостаточно средств на карте).\n\n"
+                       "Доступ к закрытому каналу клуба отключен.\n\n"
+                       "Чтобы продолжить участие в клубе, оформите новую подписку:\n"
+                       "/start",
+                "description": "Уведомление если подписка не продлена"
+            }
+        }
+        
+        for key, data in default_texts.items():
+            await self.set_text(key, data["text"], data["description"])

@@ -36,6 +36,12 @@ async def on_startup(bot: Bot, db: Database):
     await db.init_db()
     logger.info("База данных инициализирована")
     
+    # Инициализация дефолтных текстов (если их еще нет)
+    texts = await db.get_all_texts()
+    if not texts:
+        await db.init_default_texts()
+        logger.info("Дефолтные тексты инициализированы")
+    
     # Получаем информацию о боте
     bot_info = await bot.get_me()
     logger.info(f"Бот запущен: @{bot_info.username}")

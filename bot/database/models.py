@@ -151,3 +151,20 @@ class Broadcast(Base):
 
     def __repr__(self):
         return f"<Broadcast {self.id} sent={self.total_sent}>"
+
+
+class BotText(Base):
+    """Редактируемые тексты бота"""
+    __tablename__ = "bot_texts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(100), unique=True, index=True)  # Уникальный ключ текста
+    text: Mapped[str] = mapped_column(Text)  # Сам текст
+    description: Mapped[str] = mapped_column(String(255))  # Описание для админа
+    
+    # Метаданные
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)  # ID админа
+
+    def __repr__(self):
+        return f"<BotText {self.key}>"

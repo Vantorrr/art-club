@@ -8,6 +8,7 @@ def admin_menu_kb() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="👥 Пользователи")],
             [KeyboardButton(text="🎁 Промокоды"), KeyboardButton(text="📢 Рассылка")],
             [KeyboardButton(text="💰 Финансы"), KeyboardButton(text="📥 Экспорт базы")],
+            [KeyboardButton(text="✏️ Редактировать тексты")],
             [KeyboardButton(text="🔙 Выход из админ-панели")]
         ],
         resize_keyboard=True,

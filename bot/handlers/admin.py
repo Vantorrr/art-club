@@ -52,6 +52,11 @@ class GiftCreationState(StatesGroup):
     waiting_for_duration = State()
 
 
+class TextEditState(StatesGroup):
+    """Состояния для редактирования текстов"""
+    waiting_for_new_text = State()
+
+
 @router.message(Command("admin"))
 async def admin_panel(message: Message):
     """Вход в админ-панель"""
@@ -170,6 +175,14 @@ async def export_button(message: Message, db: Database):
     await export_database(message, db)
 
 
+@router.message(F.text == "✏️ Редактировать тексты")
+async def edit_texts_button(message: Message, db: Database):
+    """Обработка кнопки Редактировать тексты"""
+    if not is_admin(message.from_user.id):
+        return
+    await show_texts_list(message, db)
+
+
 @router.message(F.text == "🔙 Выход из админ-панели")
 async def exit_admin(message: Message, state: FSMContext):
     """Выход из админ-панели"""
@@ -184,6 +197,124 @@ async def exit_admin(message: Message, state: FSMContext):
         "Вы вышли из админ-панели.",
         reply_markup=user_kb.main_menu_kb(is_admin=True)  # Показываем кнопку админки
     )
+
+
+# ============ РЕДАКТИРОВАНИЕ ТЕКСТОВ ============
+
+async def show_texts_list(message: Message, db: Database):
+    """Показать список редактируемых текстов"""
+    texts = await db.get_all_texts()
+    
+    if not texts:
+        await message.answer("📝 Тексты еще не инициализированы. Инициализирую...")
+        await db.init_default_texts()
+        texts = await db.get_all_texts()
+    
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    
+    buttons = []
+    for text_obj in texts:
+        # Делаем короткое название для кнопки
+        short_desc = text_obj.description[:40] + "..." if len(text_obj.description) > 40 else text_obj.description
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"✏️ {short_desc}",
+                callback_data=f"edit_text:{text_obj.key}"
+            )
+        ])
+    
+    buttons.append([InlineKeyboardButton(text="« Назад", callback_data="admin:menu")])
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    
+    await message.answer(
+        "✏️ <b>Редактирование текстов бота</b>\n\n"
+        "Выберите текст, который хотите изменить:\n\n"
+        "<i>💡 Изменения применятся сразу для всех пользователей</i>",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data.startswith("edit_text:"))
+async def show_text_editor(callback: CallbackQuery, db: Database, state: FSMContext):
+    """Показать редактор конкретного текста"""
+    if not is_admin(callback.from_user.id):
+        return
+    
+    text_key = callback.data.split(":")[1]
+    text_obj = await db.get_text(text_key)
+    
+    if not text_obj:
+        await callback.answer("❌ Текст не найден", show_alert=True)
+        return
+    
+    # Получаем полный объект для description
+    all_texts = await db.get_all_texts()
+    text_full = next((t for t in all_texts if t.key == text_key), None)
+    
+    await state.update_data(editing_text_key=text_key)
+    await state.set_state(TextEditState.waiting_for_new_text)
+    
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_text_edit")]
+        ]
+    )
+    
+    await callback.message.edit_text(
+        f"✏️ <b>Редактирование текста</b>\n\n"
+        f"📝 <b>{text_full.description if text_full else text_key}</b>\n\n"
+        f"<b>Текущий текст:</b>\n"
+        f"<code>{text_obj}</code>\n\n"
+        f"Отправьте новый текст (можно использовать HTML форматирование):",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(TextEditState.waiting_for_new_text)
+async def save_edited_text(message: Message, db: Database, state: FSMContext):
+    """Сохранить отредактированный текст"""
+    if not is_admin(message.from_user.id):
+        return
+    
+    data = await state.get_data()
+    text_key = data.get("editing_text_key")
+    
+    if not text_key:
+        await message.answer("❌ Ошибка: не указан ключ текста")
+        await state.clear()
+        return
+    
+    new_text = message.text
+    
+    # Сохраняем новый текст
+    await db.set_text(text_key, new_text, updated_by=message.from_user.id)
+    
+    await state.clear()
+    
+    await message.answer(
+        f"✅ <b>Текст обновлен!</b>\n\n"
+        f"Ключ: <code>{text_key}</code>\n\n"
+        f"<b>Новый текст:</b>\n{new_text}",
+        parse_mode="HTML"
+    )
+    
+    # Возвращаем список текстов
+    await show_texts_list(message, db)
+
+
+@router.callback_query(F.data == "cancel_text_edit")
+async def cancel_text_edit(callback: CallbackQuery, db: Database, state: FSMContext):
+    """Отмена редактирования текста"""
+    await state.clear()
+    await callback.message.delete()
+    await show_texts_list(callback.message, db)
+    await callback.answer("❌ Редактирование отменено")
 
 
 # ============ СТАТИСТИКА ============
