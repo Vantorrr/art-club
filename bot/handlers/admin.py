@@ -778,6 +778,13 @@ async def set_custom_promo_code(message: Message, state: FSMContext, db: Databas
         await message.answer("❌ Код не может быть пустым. Введите код:")
         return
     
+    # Проверка на латиницу
+    try:
+        custom_code.encode('ascii')
+    except UnicodeEncodeError:
+        await message.answer("❌ Код может содержать только латинские буквы, цифры, _ и -\n\nВведите код:")
+        return
+    
     if not custom_code.replace('_', '').replace('-', '').isalnum():
         await message.answer("❌ Код может содержать только латинские буквы, цифры, _ и -\n\nВведите код:")
         return
@@ -916,9 +923,9 @@ async def finalize_promo_creation(message: Message, state: FSMContext, db: Datab
         
         # Определяем единицу измерения скидки
         if promo.discount_type in ['free', 'percent']:
-            discount_display = f"{promo.discount_value}%"
+            discount_display = f"{int(promo.discount_value)}%"
         else:
-            discount_display = f"{promo.discount_value} ₽"
+            discount_display = f"{int(promo.discount_value)} ₽"
         
         await message.answer(
             f"✅ <b>Промокод создан!</b>\n\n"
