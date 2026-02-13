@@ -8,7 +8,7 @@ from typing import List
 
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, BufferedInputFile
+from aiogram.types import Message, CallbackQuery, BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from openpyxl import Workbook
@@ -670,18 +670,138 @@ async def set_promo_type(callback: CallbackQuery, state: FSMContext):
     promo_type = callback.data.split(":")[1]
     await state.update_data(discount_type=promo_type)
     
-    # Автогенерация кода
-    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-    await state.update_data(code=code)
+    # Предлагаем выбор: автогенерация или свой код
+    promo_type_name = {
+        'free': 'Бесплатная подписка',
+        'percent': 'Процентная скидка',
+        'fixed': 'Фиксированная скидка'
+    }
+    
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🎲 Автоматически", callback_data=f"promo_code:auto:{promo_type}")],
+            [InlineKeyboardButton(text="✍️ Ввести свой код", callback_data=f"promo_code:custom:{promo_type}")],
+            [InlineKeyboardButton(text="« Назад", callback_data="admin:promos")]
+        ]
+    )
+    
+    await callback.message.edit_text(
+        f"🎁 <b>Создание промокода</b>\n\n"
+        f"Тип: {promo_type_name.get(promo_type, promo_type)}\n\n"
+        f"Как создать код промокода?",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+    
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("promo_code:"))
+async def set_promo_code_method(callback: CallbackQuery, state: FSMContext):
+    """Выбор метода создания кода промокода"""
+    if not is_admin(callback.from_user.id):
+        return
+    
+    parts = callback.data.split(":")
+    method = parts[1]  # auto или custom
+    promo_type = parts[2]
+    
+    data = await state.get_data()
+    
+    if method == "auto":
+        # Автогенерация кода
+        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        await state.update_data(code=code)
+        
+        if promo_type == "free":
+            await state.update_data(discount_value=100)
+            await state.set_state(PromoCreationState.waiting_for_duration)
+            
+            await callback.message.edit_text(
+                f"🎁 <b>Создание промокода</b>\n\n"
+                f"Тип: Бесплатная подписка\n"
+                f"Код: <code>{code}</code>\n\n"
+                f"На сколько месяцев дать подписку? (введите число)",
+                parse_mode="HTML"
+            )
+        else:
+            await state.set_state(PromoCreationState.waiting_for_discount)
+            
+            discount_unit = "%" if promo_type == "percent" else "₽"
+            await callback.message.edit_text(
+                f"🎁 <b>Создание промокода</b>\n\n"
+                f"Тип: {'Процентная скидка' if promo_type == 'percent' else 'Фиксированная скидка'}\n"
+                f"Код: <code>{code}</code>\n\n"
+                f"Введите размер скидки ({discount_unit}):",
+                parse_mode="HTML"
+            )
+    else:
+        # Ввод своего кода
+        await state.set_state(PromoCreationState.waiting_for_code)
+        
+        promo_type_name = {
+            'free': 'Бесплатная подписка',
+            'percent': 'Процентная скидка',
+            'fixed': 'Фиксированная скидка'
+        }
+        
+        await callback.message.edit_text(
+            f"🎁 <b>Создание промокода</b>\n\n"
+            f"Тип: {promo_type_name.get(promo_type, promo_type)}\n\n"
+            f"✍️ Введите код промокода:\n\n"
+            f"<i>Только латинские буквы и цифры, без пробелов</i>",
+            parse_mode="HTML"
+        )
+    
+    await callback.answer()
+
+
+@router.message(PromoCreationState.waiting_for_code)
+async def set_custom_promo_code(message: Message, state: FSMContext, db: Database):
+    """Обработка пользовательского кода промокода"""
+    if not is_admin(message.from_user.id):
+        return
+    
+    # Игнорируем кнопки меню
+    menu_buttons = ["📊 Статистика", "👥 Пользователи", "🎁 Промокоды", "📢 Рассылка",
+                    "💰 Финансы", "📤 Экспорт", "🔙 Выход из админ-панели",
+                    "💳 Купить подписку", "🎁 Купить в подарок", "📊 Моя подписка", "🎫 Промокод",
+                    "ℹ️ О клубе", "📞 Поддержка", "👨‍💼 Админ-панель"]
+    
+    if message.text in menu_buttons:
+        return
+    
+    custom_code = message.text.strip().upper()
+    
+    # Валидация кода
+    if not custom_code:
+        await message.answer("❌ Код не может быть пустым. Введите код:")
+        return
+    
+    if not custom_code.replace('_', '').replace('-', '').isalnum():
+        await message.answer("❌ Код может содержать только латинские буквы, цифры, _ и -\n\nВведите код:")
+        return
+    
+    # Проверяем, не занят ли код
+    existing_promo = await db.get_promocode(custom_code)
+    if existing_promo:
+        await message.answer(f"❌ Промокод <code>{custom_code}</code> уже существует.\n\nВведите другой код:", parse_mode="HTML")
+        return
+    
+    # Сохраняем код
+    await state.update_data(code=custom_code)
+    
+    data = await state.get_data()
+    promo_type = data['discount_type']
     
     if promo_type == "free":
         await state.update_data(discount_value=100)
         await state.set_state(PromoCreationState.waiting_for_duration)
         
-        await callback.message.edit_text(
+        await message.answer(
             f"🎁 <b>Создание промокода</b>\n\n"
             f"Тип: Бесплатная подписка\n"
-            f"Код: <code>{code}</code>\n\n"
+            f"Код: <code>{custom_code}</code>\n\n"
             f"На сколько месяцев дать подписку? (введите число)",
             parse_mode="HTML"
         )
@@ -689,15 +809,13 @@ async def set_promo_type(callback: CallbackQuery, state: FSMContext):
         await state.set_state(PromoCreationState.waiting_for_discount)
         
         discount_unit = "%" if promo_type == "percent" else "₽"
-        await callback.message.edit_text(
+        await message.answer(
             f"🎁 <b>Создание промокода</b>\n\n"
             f"Тип: {'Процентная скидка' if promo_type == 'percent' else 'Фиксированная скидка'}\n"
-            f"Код: <code>{code}</code>\n\n"
+            f"Код: <code>{custom_code}</code>\n\n"
             f"Введите размер скидки ({discount_unit}):",
             parse_mode="HTML"
         )
-    
-    await callback.answer()
 
 
 @router.message(PromoCreationState.waiting_for_discount)
@@ -796,11 +914,17 @@ async def finalize_promo_creation(message: Message, state: FSMContext, db: Datab
             created_by=message.from_user.id
         )
         
+        # Определяем единицу измерения скидки
+        if promo.discount_type in ['free', 'percent']:
+            discount_display = f"{promo.discount_value}%"
+        else:
+            discount_display = f"{promo.discount_value} ₽"
+        
         await message.answer(
             f"✅ <b>Промокод создан!</b>\n\n"
             f"Код: <code>{promo.code}</code>\n"
             f"Тип: {promo.discount_type}\n"
-            f"Скидка: {promo.discount_value}{'%' if promo.discount_type == 'percent' else ' ₽'}\n"
+            f"Скидка: {discount_display}\n"
             f"Длительность: {promo.duration_months} мес.\n"
             f"Макс. использований: {promo.max_uses or 'без ограничений'}",
             parse_mode="HTML"

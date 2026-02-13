@@ -364,9 +364,15 @@ async def process_promo_code(message: Message, state: FSMContext, db: Database):
         
     else:
         # Скидка на покупку
+        # Определяем единицу измерения скидки
+        if promo.discount_type in ['free', 'percent']:
+            discount_display = f"{promo.discount_value}%"
+        else:
+            discount_display = f"{promo.discount_value} ₽"
+        
         await message.answer(
             f"✅ Промокод <b>{code}</b> применен!\n\n"
-            f"Скидка: <b>{promo.discount_value}{'%' if promo.discount_type == 'percent' else ' ₽'}</b>\n"
+            f"Скидка: <b>{discount_display}</b>\n"
             f"Теперь выберите тариф для покупки со скидкой:",
             reply_markup=kb.subscription_plans_kb(),
             parse_mode="HTML"
