@@ -56,6 +56,24 @@ async def prodamus_webhook(request: Request):
         # Парсим данные
         webhook_data = ProdamusWebhook(**data)
         
+        # ВАЖНО: Если user_id не пришёл от Prodamus, извлекаем из order_id
+        if not webhook_data.user_id:
+            # order_id формата: artclub_408891513_1738954200 или gift_408891513_1738954200
+            try:
+                parts = webhook_data.order_id.split("_")
+                if len(parts) >= 3:
+                    # Для обычных: artclub_USER_ID_timestamp
+                    # Для подарков: gift_USER_ID_timestamp
+                    webhook_data.user_id = int(parts[1])
+                    logger.info(f"User ID извлечён из order_id: {webhook_data.user_id}")
+            except (ValueError, IndexError) as e:
+                logger.error(f"Не удалось извлечь user_id из order_id {webhook_data.order_id}: {e}")
+                raise HTTPException(status_code=400, detail="Cannot extract user_id from order_id")
+        
+        if not webhook_data.user_id:
+            logger.error(f"User ID не найден в платеже {webhook_data.order_id}")
+            raise HTTPException(status_code=400, detail="Missing user_id")
+        
         # Обрабатываем только успешные платежи
         if webhook_data.payment_status != "success":
             logger.info(f"Платеж {webhook_data.order_id} не успешный: {webhook_data.payment_status}")
