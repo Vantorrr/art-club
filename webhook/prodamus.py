@@ -19,19 +19,36 @@ db: Optional[Database] = None
 bot: Optional[Bot] = None
 
 
+class SubscriptionInfo(BaseModel):
+    """Информация о подписке (для автоплатежей)"""
+    type: Optional[str] = None
+    action_code: Optional[str] = None  # auto_payment, deactivation, finish
+    payment_date: Optional[str] = None
+    id: Optional[str] = None
+    profile_id: Optional[str] = None
+    active: Optional[str] = None
+    cost: Optional[str] = None
+    name: Optional[str] = None
+    date_next_payment: Optional[str] = None
+    autopayment: Optional[str] = None  # 0 - покупка, 1 - автосписание
+
+
 class ProdamusWebhook(BaseModel):
     """Модель данных от Prodamus"""
     order_id: str
     order_num: Optional[str] = None
     customer_email: Optional[str] = None
     customer_phone: Optional[str] = None
+    customer_extra: Optional[str] = None  # Здесь передаётся user_id
     products: Optional[str] = None
-    payment_type: Optional[str] = None
-    payment_status: str  # success, fail, pending
-    order_sum: float
+    payment_type: Optional[str] = None  # "Автоплатеж" для рекуррентных
+    payment_status: Optional[str] = "success"  # success, fail, pending
+    order_sum: Optional[float] = None
+    sum: Optional[float] = None  # Альтернативное поле для суммы
     commission: Optional[float] = None
     user_id: Optional[int] = None  # Передаем через параметры при создании ссылки
     subscription_plan: Optional[str] = None
+    subscription: Optional[SubscriptionInfo] = None  # Для автоплатежей
     sign: str  # Подпись для проверки
 
 
@@ -56,29 +73,112 @@ async def prodamus_webhook(request: Request):
         # Парсим данные
         webhook_data = ProdamusWebhook(**data)
         
-        # ВАЖНО: Если user_id не пришёл от Prodamus, извлекаем из order_id
+        # Определяем тип платежа
+        is_autopayment = (
+            webhook_data.payment_type == "Автоплатеж" or
+            (webhook_data.subscription and webhook_data.subscription.autopayment == "1")
+        )
+        
+        # Извлекаем user_id
         if not webhook_data.user_id:
-            # order_id формата: artclub_408891513_1738954200 или gift_408891513_1738954200
-            try:
-                parts = webhook_data.order_id.split("_")
-                if len(parts) >= 3:
-                    # Для обычных: artclub_USER_ID_timestamp
-                    # Для подарков: gift_USER_ID_timestamp
-                    webhook_data.user_id = int(parts[1])
-                    logger.info(f"User ID извлечён из order_id: {webhook_data.user_id}")
-            except (ValueError, IndexError) as e:
-                logger.error(f"Не удалось извлечь user_id из order_id {webhook_data.order_id}: {e}")
-                raise HTTPException(status_code=400, detail="Cannot extract user_id from order_id")
+            # Сначала пробуем customer_extra (для автоплатежей и новых платежей)
+            if webhook_data.customer_extra:
+                try:
+                    webhook_data.user_id = int(webhook_data.customer_extra)
+                    logger.info(f"User ID извлечён из customer_extra: {webhook_data.user_id}")
+                except ValueError:
+                    pass
+            
+            # Если не получилось - извлекаем из order_id (для старых платежей)
+            if not webhook_data.user_id:
+                try:
+                    parts = webhook_data.order_id.split("_")
+                    if len(parts) >= 3:
+                        webhook_data.user_id = int(parts[1])
+                        logger.info(f"User ID извлечён из order_id: {webhook_data.user_id}")
+                except (ValueError, IndexError) as e:
+                    logger.error(f"Не удалось извлечь user_id: {e}")
         
         if not webhook_data.user_id:
             logger.error(f"User ID не найден в платеже {webhook_data.order_id}")
             raise HTTPException(status_code=400, detail="Missing user_id")
         
         # Обрабатываем только успешные платежи
-        if webhook_data.payment_status != "success":
+        if webhook_data.payment_status and webhook_data.payment_status != "success":
             logger.info(f"Платеж {webhook_data.order_id} не успешный: {webhook_data.payment_status}")
             return {"status": "ok", "message": "Payment not successful"}
         
+        # ===== ОБРАБОТКА АВТОПЛАТЕЖЕЙ (РЕКУРРЕНТНЫХ) =====
+        if is_autopayment:
+            logger.info(f"🔄 Обработка автоплатежа для user_id: {webhook_data.user_id}")
+            
+            # Определяем сумму платежа
+            amount = webhook_data.order_sum or webhook_data.sum or 0
+            
+            if db:
+                # Сохраняем платёж
+                await db.add_payment(
+                    user_id=webhook_data.user_id,
+                    order_id=webhook_data.order_id,
+                    amount=amount,
+                    subscription_plan="autopayment_1_month",
+                    duration_months=1,
+                    status="success"
+                )
+                
+                # Продлеваем существующую подписку на 1 месяц (30 дней)
+                user = await db.get_user(webhook_data.user_id)
+                
+                if user:
+                    # Если подписка активна - продлеваем от текущей даты окончания
+                    # Если истекла - продлеваем от текущего момента
+                    from sqlalchemy import text
+                    async with db.engine.begin() as conn:
+                        result = await conn.execute(
+                            text('SELECT expires_at FROM subscriptions WHERE user_id = :user_id ORDER BY started_at DESC LIMIT 1'),
+                            {'user_id': webhook_data.user_id}
+                        )
+                        last_sub = result.fetchone()
+                    
+                    if last_sub and last_sub.expires_at > datetime.utcnow():
+                        # Подписка активна - продлеваем от expires_at
+                        new_expires = last_sub.expires_at + timedelta(days=30)
+                    else:
+                        # Подписка истекла или нет - продлеваем от сейчас
+                        new_expires = datetime.utcnow() + timedelta(days=30)
+                    
+                    # Создаём новую подписку
+                    await db.add_subscription(
+                        user_id=webhook_data.user_id,
+                        duration_months=1,
+                        expires_at=new_expires,
+                        activated_by="autopayment"
+                    )
+                    
+                    logger.info(f"✅ Подписка продлена до {new_expires} для user_id: {webhook_data.user_id}")
+                    
+                    # Отправляем уведомление о продлении
+                    if bot:
+                        try:
+                            await bot.send_message(
+                                webhook_data.user_id,
+                                f"✅ <b>Подписка автоматически продлена!</b>\n\n"
+                                f"Списано: <b>{int(amount)} ₽</b>\n"
+                                f"Подписка активна до: <b>{new_expires.strftime('%d.%m.%Y')}</b>\n\n"
+                                f"💳 Следующее списание через месяц.\n\n"
+                                f"Если хотите отменить подписку или изменить тариф, используйте кнопки ниже.",
+                                parse_mode="HTML"
+                            )
+                        except Exception as e:
+                            logger.error(f"Ошибка отправки уведомления о продлении: {e}")
+            
+            return {
+                "status": "ok",
+                "order_id": webhook_data.order_id,
+                "message": "Autopayment processed successfully"
+            }
+        
+        # ===== ОБРАБОТКА ОБЫЧНЫХ ПЛАТЕЖЕЙ =====
         # Определяем тип платежа (обычная подписка или подарок)
         is_gift = webhook_data.order_id.startswith("gift_")
         
