@@ -130,6 +130,16 @@ async def prodamus_webhook(request: Request):
             logger.info(f"🔄 АВТОПЛАТЁЖ для user_id: {user_id}")
             
             if db and bot:
+                # Проверяем не обработан ли уже этот автоплатёж
+                existing_payment = await db.get_payment(order_id)
+                if existing_payment:
+                    logger.info(f"⚠️ Автоплатёж {order_id} уже обработан ранее")
+                    return {
+                        "status": "ok",
+                        "order_id": order_id,
+                        "message": "Autopayment already processed"
+                    }
+                
                 # Сохраняем платёж
                 await db.add_payment(
                     user_id=user_id,
@@ -177,6 +187,39 @@ async def prodamus_webhook(request: Request):
         
         # ===== ОБРАБОТКА ОБЫЧНЫХ ПЛАТЕЖЕЙ =====
         logger.info(f"💳 Обычный платёж для user_id: {user_id}")
+        
+        # Проверяем не обработан ли уже этот платёж
+        if db:
+            existing_payment = await db.get_payment(order_id)
+            if existing_payment:
+                logger.info(f"⚠️ Платёж {order_id} уже обработан ранее")
+                logger.info(f"   Статус: {existing_payment.status}")
+                logger.info(f"   Дата: {existing_payment.created_at}")
+                
+                # Проверяем есть ли активная подписка
+                user = await db.get_user(user_id)
+                if user and user.is_subscribed:
+                    logger.info(f"✅ Подписка активна до {user.subscription_expires_at}")
+                    
+                    # Отправляем инвайт если пользователя нет в канале
+                    if bot:
+                        channel_id = int(os.getenv("MAIN_CHANNEL_ID", 0))
+                        try:
+                            member = await bot.get_chat_member(channel_id, user_id)
+                            if member.status not in ['member', 'administrator', 'creator']:
+                                logger.info(f"📤 Пользователь не в канале, отправляю инвайт")
+                                await send_invite_to_user(bot, user_id, channel_id, user.subscription_expires_at)
+                                logger.info(f"✅ Инвайт отправлен повторно")
+                            else:
+                                logger.info(f"✅ Пользователь уже в канале")
+                        except Exception as e:
+                            logger.error(f"❌ Ошибка проверки канала: {e}")
+                
+                return {
+                    "status": "ok",
+                    "order_id": order_id,
+                    "message": "Payment already processed"
+                }
         
         # Определяем план (по умолчанию 1 месяц)
         plan = "1_month"
