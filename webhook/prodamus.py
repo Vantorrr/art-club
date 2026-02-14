@@ -60,8 +60,10 @@ async def prodamus_webhook(request: Request):
     Принимает уведомления о платежах и автоматически выдает доступ к каналу
     """
     try:
-        # Получаем данные
-        data = await request.json()
+        # Prodamus отправляет данные в formdata, а НЕ JSON!
+        form_data = await request.form()
+        data = dict(form_data)
+        
         logger.info(f"🔔 ========== ПОЛУЧЕН WEBHOOK ОТ PRODAMUS ==========")
         logger.info(f"📦 Данные: {data}")
         logger.info(f"🔑 Ключевые поля:")
@@ -77,56 +79,61 @@ async def prodamus_webhook(request: Request):
         # Prodamus всё равно отправляет только со своих серверов
         logger.info("✅ Webhook принят (проверка подписи отключена)")
         
-        # Парсим данные
-        webhook_data = ProdamusWebhook(**data)
+        # Извлекаем основные поля (всё приходит как строки в form-data)
+        order_id = data.get('order_id', '')
+        payment_status = data.get('payment_status', 'success')
+        payment_type = data.get('payment_type', '')
+        customer_extra = data.get('customer_extra', '')
+        
+        # Сумма может быть в разных полях
+        sum_value = data.get('sum') or data.get('order_sum') or '3500'
+        amount = float(sum_value) if sum_value else 3500.0
         
         # Определяем тип платежа
-        is_autopayment = (
-            webhook_data.payment_type == "Автоплатеж" or
-            (webhook_data.subscription and webhook_data.subscription.autopayment == "1")
-        )
+        is_autopayment = "Автоплатеж" in payment_type or "Auto" in payment_type
+        is_gift = order_id.startswith("gift_")
+        
+        logger.info(f"📋 Тип платежа: {'АВТОПЛАТЁЖ' if is_autopayment else 'ПОДАРОК' if is_gift else 'ОБЫЧНЫЙ'}")
         
         # Извлекаем user_id
-        if not webhook_data.user_id:
-            # Сначала пробуем customer_extra (для автоплатежей и новых платежей)
-            if webhook_data.customer_extra:
-                try:
-                    webhook_data.user_id = int(webhook_data.customer_extra)
-                    logger.info(f"User ID извлечён из customer_extra: {webhook_data.user_id}")
-                except ValueError:
-                    pass
-            
-            # Если не получилось - извлекаем из order_id (для старых платежей)
-            if not webhook_data.user_id:
-                try:
-                    parts = webhook_data.order_id.split("_")
-                    if len(parts) >= 3:
-                        webhook_data.user_id = int(parts[1])
-                        logger.info(f"User ID извлечён из order_id: {webhook_data.user_id}")
-                except (ValueError, IndexError) as e:
-                    logger.error(f"Не удалось извлечь user_id: {e}")
+        user_id = None
         
-        if not webhook_data.user_id:
-            logger.error(f"User ID не найден в платеже {webhook_data.order_id}")
+        # 1. Из customer_extra
+        if customer_extra:
+            try:
+                user_id = int(customer_extra)
+                logger.info(f"✅ User ID из customer_extra: {user_id}")
+            except ValueError:
+                pass
+        
+        # 2. Из order_id (если не нашли)
+        if not user_id:
+            try:
+                parts = order_id.split("_")
+                if len(parts) >= 3:
+                    user_id = int(parts[1])
+                    logger.info(f"✅ User ID из order_id: {user_id}")
+            except (ValueError, IndexError):
+                pass
+        
+        if not user_id:
+            logger.error(f"❌ User ID не найден! order_id={order_id}, customer_extra={customer_extra}")
             raise HTTPException(status_code=400, detail="Missing user_id")
         
         # Обрабатываем только успешные платежи
-        if webhook_data.payment_status and webhook_data.payment_status != "success":
-            logger.info(f"Платеж {webhook_data.order_id} не успешный: {webhook_data.payment_status}")
+        if payment_status and payment_status != "success":
+            logger.info(f"⚠️ Платёж не успешный: {payment_status}")
             return {"status": "ok", "message": "Payment not successful"}
         
         # ===== ОБРАБОТКА АВТОПЛАТЕЖЕЙ (РЕКУРРЕНТНЫХ) =====
         if is_autopayment:
-            logger.info(f"🔄 АВТОПЛАТЁЖ для user_id: {webhook_data.user_id}")
-            
-            # Определяем сумму платежа
-            amount = webhook_data.order_sum or webhook_data.sum or 3500
+            logger.info(f"🔄 АВТОПЛАТЁЖ для user_id: {user_id}")
             
             if db and bot:
                 # Сохраняем платёж
                 await db.add_payment(
-                    user_id=webhook_data.user_id,
-                    order_id=webhook_data.order_id,
+                    user_id=user_id,
+                    order_id=order_id,
                     amount=amount,
                     subscription_plan="autopayment_1_month",
                     duration_months=1,
@@ -135,11 +142,11 @@ async def prodamus_webhook(request: Request):
                 
                 logger.info(f"✅ Платёж сохранён: {amount}₽")
                 
-                # Продлеваем подписку на 30 дней от СЕЙЧАС (просто и понятно)
+                # Продлеваем подписку на 30 дней от СЕЙЧАС
                 new_expires = datetime.utcnow() + timedelta(days=30)
                 
                 await db.add_subscription(
-                    user_id=webhook_data.user_id,
+                    user_id=user_id,
                     duration_months=1,
                     expires_at=new_expires,
                     activated_by="autopayment"
@@ -150,7 +157,7 @@ async def prodamus_webhook(request: Request):
                 # Отправляем уведомление
                 try:
                     await bot.send_message(
-                        webhook_data.user_id,
+                        user_id,
                         f"✅ <b>Подписка автоматически продлена!</b>\n\n"
                         f"Списано: <b>{int(amount)} ₽</b>\n"
                         f"Подписка активна до: <b>{new_expires.strftime('%d.%m.%Y')}</b>\n\n"
@@ -159,50 +166,47 @@ async def prodamus_webhook(request: Request):
                     )
                     logger.info(f"✅ Уведомление отправлено")
                 except Exception as e:
-                    logger.error(f"❌ Ошибка отправки уведомления: {e}")
+                    logger.error(f"❌ Ошибка уведомления: {e}")
             
-            logger.info(f"🎉 Автоплатёж обработан успешно!")
+            logger.info(f"🎉 Автоплатёж обработан!")
             return {
                 "status": "ok",
-                "order_id": webhook_data.order_id,
+                "order_id": order_id,
                 "message": "Autopayment processed"
             }
         
         # ===== ОБРАБОТКА ОБЫЧНЫХ ПЛАТЕЖЕЙ =====
-        # Определяем тип платежа (обычная подписка или подарок)
-        is_gift = webhook_data.order_id.startswith("gift_")
+        logger.info(f"💳 Обычный платёж для user_id: {user_id}")
         
-        # Получаем данные о подписке
-        plan = webhook_data.subscription_plan or "1_month"
-        # Убираем префикс gift_ из плана если есть
-        if plan.startswith("gift_"):
-            plan = plan.replace("gift_", "")
-        
+        # Определяем план (по умолчанию 1 месяц)
+        plan = "1_month"
         plans = get_plan_config()
         
-        if plan not in plans:
-            logger.error(f"Неизвестный план: {plan}")
-            raise HTTPException(status_code=400, detail="Invalid subscription plan")
+        # Пытаемся определить план по сумме
+        for plan_key, plan_data in plans.items():
+            if abs(amount - plan_data["price"]) < 100:  # Погрешность 100₽
+                plan = plan_key
+                break
         
         plan_info = plans[plan]
         
-        # Определяем сумму платежа (может быть sum или order_sum)
-        amount = webhook_data.order_sum or webhook_data.sum or plan_info["price"]
+        logger.info(f"📋 План: {plan} ({plan_info['months']} мес., {plan_info['price']}₽)")
         
         # Сохраняем платеж в БД
         if db:
             await db.add_payment(
-                user_id=webhook_data.user_id,
-                order_id=webhook_data.order_id,
+                user_id=user_id,
+                order_id=order_id,
                 amount=amount,
                 subscription_plan=f"gift_{plan}" if is_gift else plan,
                 duration_months=plan_info["months"],
                 status="success"
             )
             
+            logger.info(f"✅ Платёж сохранён в БД")
+            
             if is_gift:
                 # ===== ПОДАРОЧНАЯ ПОДПИСКА =====
-                # Создаем уникальный промокод
                 import random
                 gift_code = f"GIFT_{random.randint(100000, 999999)}"
                 
@@ -212,20 +216,16 @@ async def prodamus_webhook(request: Request):
                     discount_value=100,
                     duration_months=plan_info["months"],
                     max_uses=1,
-                    created_by=webhook_data.user_id,
+                    created_by=user_id,
                     is_gift=True
-                    # for_username не указываем - подарок для любого
                 )
                 
-                logger.info(
-                    f"🎁 Подарочная подписка создана. Buyer: {webhook_data.user_id}, "
-                    f"Code: {gift_code}, Duration: {plan_info['months']} мес."
-                )
+                logger.info(f"🎁 Подарочный код создан: {gift_code}")
                 
                 # Отправляем код дарителю
                 if bot:
                     await bot.send_message(
-                        webhook_data.user_id,
+                        user_id,
                         f"🎁 <b>Подарочная подписка оплачена!</b>\n\n"
                         f"Ваш уникальный код:\n"
                         f"<code>{gift_code}</code>\n\n"
@@ -237,33 +237,31 @@ async def prodamus_webhook(request: Request):
                         f"✅ После активации получатель сразу получит доступ в клуб!",
                         parse_mode="HTML"
                     )
+                    logger.info(f"✅ Код отправлен дарителю")
             else:
                 # ===== ОБЫЧНАЯ ПОДПИСКА =====
-                # Активируем подписку
                 expires_at = datetime.utcnow() + timedelta(days=30 * plan_info["months"])
                 
                 await db.add_subscription(
-                    user_id=webhook_data.user_id,
+                    user_id=user_id,
                     duration_months=plan_info["months"],
                     expires_at=expires_at,
                     activated_by="payment"
                 )
                 
-                # Отправляем инвайт-ссылку пользователю
-                logger.info(
-                    f"✅ Платеж успешно обработан. User: {webhook_data.user_id}, "
-                    f"Plan: {plan}, Expires: {expires_at}. Отправка инвайт-ссылки..."
-                )
+                logger.info(f"✅ Подписка создана до {expires_at}")
                 
                 # Отправляем инвайт-ссылку
                 if bot:
                     channel_id = int(os.getenv("MAIN_CHANNEL_ID", 0))
-                    await send_invite_to_user(bot, webhook_data.user_id, channel_id, expires_at)
+                    await send_invite_to_user(bot, user_id, channel_id, expires_at)
+                    logger.info(f"✅ Инвайт-ссылка отправлена")
         
+        logger.info(f"🎉 Платёж обработан успешно!")
         return {
             "status": "ok",
-            "order_id": webhook_data.order_id,
-            "message": "Payment processed successfully"
+            "order_id": order_id,
+            "message": "Payment processed"
         }
         
     except Exception as e:
