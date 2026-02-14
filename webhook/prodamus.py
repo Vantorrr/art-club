@@ -62,13 +62,27 @@ async def prodamus_webhook(request: Request):
     try:
         # Получаем данные
         data = await request.json()
-        logger.info(f"Получен webhook от Prodamus: {data}")
+        logger.info(f"🔔 ========== ПОЛУЧЕН WEBHOOK ОТ PRODAMUS ==========")
+        logger.info(f"📦 Данные: {data}")
+        logger.info(f"🔑 Ключевые поля:")
+        logger.info(f"   order_id: {data.get('order_id')}")
+        logger.info(f"   payment_status: {data.get('payment_status')}")
+        logger.info(f"   payment_type: {data.get('payment_type')}")
+        logger.info(f"   sum: {data.get('sum')}")
+        logger.info(f"   order_sum: {data.get('order_sum')}")
+        logger.info(f"   customer_extra: {data.get('customer_extra')}")
+        logger.info(f"   subscription: {data.get('subscription')}")
         
-        # Проверяем подпись
+        # Проверяем подпись (отключаем для отладки)
         secret_key = os.getenv("PRODAMUS_SECRET_KEY")
-        if not verify_prodamus_signature(data, secret_key):
-            logger.warning("Невалидная подпись webhook")
-            raise HTTPException(status_code=403, detail="Invalid signature")
+        skip_signature_check = os.getenv("SKIP_SIGNATURE_CHECK", "false").lower() == "true"
+        
+        if not skip_signature_check:
+            if not verify_prodamus_signature(data, secret_key):
+                logger.warning("Невалидная подпись webhook")
+                raise HTTPException(status_code=403, detail="Invalid signature")
+        else:
+            logger.warning("⚠️ Проверка подписи ОТКЛЮЧЕНА (режим отладки)")
         
         # Парсим данные
         webhook_data = ProdamusWebhook(**data)
@@ -196,12 +210,15 @@ async def prodamus_webhook(request: Request):
         
         plan_info = plans[plan]
         
+        # Определяем сумму платежа (может быть sum или order_sum)
+        amount = webhook_data.order_sum or webhook_data.sum or plan_info["price"]
+        
         # Сохраняем платеж в БД
         if db:
             await db.add_payment(
                 user_id=webhook_data.user_id,
                 order_id=webhook_data.order_id,
-                amount=webhook_data.order_sum,
+                amount=amount,
                 subscription_plan=f"gift_{plan}" if is_gift else plan,
                 duration_months=plan_info["months"],
                 status="success"
