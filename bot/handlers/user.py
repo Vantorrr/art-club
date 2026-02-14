@@ -332,7 +332,15 @@ async def process_promo_code(message: Message, state: FSMContext, db: Database):
     # Активируем промокод
     user = await db.get_user(message.from_user.id)
     
-    if promo.discount_type == "free":
+    # Проверяем, является ли промокод бесплатным
+    # Бесплатные: discount_type="free" ИЛИ percent/fixed со 100% скидкой
+    is_free_promo = (
+        promo.discount_type == "free" or 
+        (promo.discount_type == "percent" and promo.discount_value >= 100) or
+        (promo.discount_type == "fixed" and promo.discount_value >= 99999)  # Очень большая фиксированная скидка
+    )
+    
+    if is_free_promo:
         # Бесплатная подписка
         expires_at = datetime.utcnow() + timedelta(days=30 * promo.duration_months)
         
@@ -362,6 +370,9 @@ async def process_promo_code(message: Message, state: FSMContext, db: Database):
             parse_mode="HTML"
         )
         
+        # Очищаем состояние после активации бесплатного промокода
+        await state.clear()
+        
     else:
         # Скидка на покупку
         # Определяем единицу измерения скидки
@@ -379,9 +390,8 @@ async def process_promo_code(message: Message, state: FSMContext, db: Database):
         )
         
         # Сохраняем промокод в состоянии для применения при оплате
+        # НЕ очищаем state! Промокод нужен при выборе тарифа
         await state.update_data(promo_code=code)
-    
-    await state.clear()
 
 
 @router.message(F.text == "ℹ️ О клубе")
