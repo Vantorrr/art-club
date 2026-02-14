@@ -199,21 +199,38 @@ async def prodamus_webhook(request: Request):
                 # Проверяем есть ли активная подписка
                 user = await db.get_user(user_id)
                 if user and user.is_subscribed:
-                    logger.info(f"✅ Подписка активна до {user.subscription_expires_at}")
+                    # Получаем дату истечения из последней подписки
+                    from sqlalchemy import select, desc
+                    from bot.database.models import Subscription
                     
-                    # Отправляем инвайт если пользователя нет в канале
-                    if bot:
-                        channel_id = int(os.getenv("MAIN_CHANNEL_ID", 0))
-                        try:
-                            member = await bot.get_chat_member(channel_id, user_id)
-                            if member.status not in ['member', 'administrator', 'creator']:
-                                logger.info(f"📤 Пользователь не в канале, отправляю инвайт")
-                                await send_invite_to_user(bot, user_id, channel_id, user.subscription_expires_at)
-                                logger.info(f"✅ Инвайт отправлен повторно")
-                            else:
-                                logger.info(f"✅ Пользователь уже в канале")
-                        except Exception as e:
-                            logger.error(f"❌ Ошибка проверки канала: {e}")
+                    async with db.session_maker() as session:
+                        result = await session.execute(
+                            select(Subscription)
+                            .where(Subscription.user_id == user_id)
+                            .order_by(desc(Subscription.expires_at))
+                            .limit(1)
+                        )
+                        subscription = result.scalar_one_or_none()
+                        
+                        if subscription:
+                            expires_at = subscription.expires_at
+                            logger.info(f"✅ Подписка активна до {expires_at}")
+                            
+                            # Отправляем инвайт если пользователя нет в канале
+                            if bot:
+                                channel_id = int(os.getenv("MAIN_CHANNEL_ID", 0))
+                                try:
+                                    member = await bot.get_chat_member(channel_id, user_id)
+                                    if member.status not in ['member', 'administrator', 'creator']:
+                                        logger.info(f"📤 Пользователь не в канале, отправляю инвайт")
+                                        await send_invite_to_user(bot, user_id, channel_id, expires_at)
+                                        logger.info(f"✅ Инвайт отправлен повторно")
+                                    else:
+                                        logger.info(f"✅ Пользователь уже в канале")
+                                except Exception as e:
+                                    logger.error(f"❌ Ошибка проверки канала: {e}")
+                        else:
+                            logger.warning(f"⚠️ is_subscribed=True, но подписка не найдена в БД")
                 
                 return {
                     "status": "ok",
