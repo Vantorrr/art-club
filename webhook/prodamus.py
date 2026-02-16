@@ -59,6 +59,7 @@ async def prodamus_webhook(request: Request):
     
     Принимает уведомления о платежах и автоматически выдает доступ к каналу
     """
+    data = {}  # Инициализируем заранее для except блока
     try:
         # Prodamus отправляет данные в formdata, а НЕ JSON!
         form_data = await request.form()
@@ -84,6 +85,16 @@ async def prodamus_webhook(request: Request):
         payment_status = data.get('payment_status', 'success')
         payment_type = data.get('payment_type', '')
         customer_extra = data.get('customer_extra', '')
+        
+        # Проверка валидности order_id
+        if not order_id or order_id == '0':
+            logger.warning(f"⚠️ Невалидный order_id: {order_id}")
+            logger.info(f"📦 Данные: {data}")
+            return {
+                "status": "error",
+                "message": "Invalid order_id",
+                "order_id": order_id
+            }
         
         # Сумма может быть в разных полях
         sum_value = data.get('sum') or data.get('order_sum') or '3500'
@@ -118,7 +129,15 @@ async def prodamus_webhook(request: Request):
         
         if not user_id:
             logger.error(f"❌ User ID не найден! order_id={order_id}, customer_extra={customer_extra}")
-            raise HTTPException(status_code=400, detail="Missing user_id")
+            logger.error(f"📦 Полные данные: {data}")
+            
+            # Возвращаем 200 OK чтобы Prodamus не повторял запрос
+            return {
+                "status": "error",
+                "order_id": order_id,
+                "message": "Cannot extract user_id from webhook data",
+                "note": "Please check customer_extra field or order_id format"
+            }
         
         # Обрабатываем только успешные платежи
         if payment_status and payment_status != "success":
@@ -325,8 +344,16 @@ async def prodamus_webhook(request: Request):
         }
         
     except Exception as e:
-        logger.error(f"Ошибка обработки webhook: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"❌ КРИТИЧЕСКАЯ ОШИБКА обработки webhook: {e}", exc_info=True)
+        logger.error(f"📦 Данные webhook: {data}")
+        
+        # Возвращаем 200 OK чтобы Prodamus не повторял запрос
+        # Ошибка уже залогирована для анализа
+        return {
+            "status": "error",
+            "message": f"Internal error: {str(e)}",
+            "note": "Error logged for investigation"
+        }
 
 
 @app.get("/health")
