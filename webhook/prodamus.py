@@ -127,6 +127,16 @@ async def prodamus_webhook(request: Request):
             except (ValueError, IndexError):
                 pass
         
+        # 3. Из tg_user_id (для старых платежей через BotHelp)
+        if not user_id:
+            tg_user_id = data.get('tg_user_id', '')
+            if tg_user_id:
+                try:
+                    user_id = int(tg_user_id)
+                    logger.info(f"✅ User ID из tg_user_id (BotHelp): {user_id}")
+                except ValueError:
+                    pass
+        
         if not user_id:
             logger.error(f"❌ User ID не найден! order_id={order_id}, customer_extra={customer_extra}")
             logger.error(f"📦 Полные данные: {data}")
