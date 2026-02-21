@@ -193,6 +193,17 @@ async def prodamus_webhook(request: Request):
                 
                 logger.info(f"✅ Подписка продлена до {new_expires}")
                 
+                # Проверяем, есть ли пользователь в канале; если нет - отправляем инвайт
+                channel_id = int(os.getenv("MAIN_CHANNEL_ID", 0))
+                try:
+                    member = await bot.get_chat_member(channel_id, user_id)
+                    if member.status not in ['member', 'administrator', 'creator']:
+                        logger.info(f"📤 Пользователь не в канале, отправляю инвайт")
+                        await send_invite_to_user(bot, user_id, channel_id, new_expires)
+                        logger.info(f"✅ Инвайт отправлен")
+                except Exception as e:
+                    logger.error(f"❌ Ошибка проверки/инвайта: {e}")
+                
                 # Отправляем уведомление
                 try:
                     await bot.send_message(
