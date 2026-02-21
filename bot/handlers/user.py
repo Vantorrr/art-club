@@ -236,7 +236,10 @@ async def my_subscription(message: Message, db: Database, state: FSMContext):
             f"{status_emoji} <b>Ваша подписка активна</b>\n\n"
             f"Действует до: <b>{user.subscription_until.strftime('%d.%m.%Y')}</b>\n"
             f"Осталось дней: <b>{days_left}</b>\n\n"
-            f"После истечения срока подписки доступ к каналу будет автоматически закрыт.",
+            f"🔄 Подписка продлевается автоматически.\n"
+            f"Мы пришлём уведомление за 3 дня до списания.\n\n"
+            f"Если вы хотите сменить тариф или отменить подписку — воспользуйтесь кнопками ниже.",
+            reply_markup=kb.my_subscription_kb(),
             parse_mode="HTML"
         )
     else:
@@ -261,6 +264,87 @@ async def cancel_action(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
         "Главное меню:",
         reply_markup=kb.main_menu_kb(is_admin=is_admin)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "cancel_subscription")
+async def cancel_subscription_start(callback: CallbackQuery):
+    """Запрос подтверждения отмены подписки"""
+    await callback.message.edit_text(
+        "⚠️ <b>Вы уверены, что хотите отменить подписку?</b>\n\n"
+        "После отмены:\n"
+        "• Автоматическое продление будет отключено\n"
+        "• Доступ сохранится до конца оплаченного периода\n"
+        "• После истечения срока доступ к каналу будет закрыт\n\n"
+        "Вы сможете оформить подписку заново в любой момент.",
+        reply_markup=kb.confirm_cancel_subscription_kb(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "confirm_cancel_subscription")
+async def confirm_cancel_subscription(callback: CallbackQuery, db: Database):
+    """Подтверждение отмены подписки"""
+    user_id = callback.from_user.id
+    user = await db.get_user(user_id)
+
+    if user and user.is_subscribed and user.subscription_until:
+        expires_str = user.subscription_until.strftime('%d.%m.%Y')
+
+        await callback.message.edit_text(
+            "✅ <b>Подписка отменена</b>\n\n"
+            f"Автопродление отключено.\n"
+            f"Доступ к каналу сохранится до <b>{expires_str}</b>.\n\n"
+            "Вы можете оформить подписку заново в любой момент через кнопку «💳 Купить подписку».",
+            parse_mode="HTML"
+        )
+
+        # Отправляем уведомление админу
+        admin_ids = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
+        bot = callback.bot
+        for admin_id in admin_ids:
+            try:
+                await bot.send_message(
+                    admin_id,
+                    f"🔔 <b>Отмена подписки</b>\n\n"
+                    f"Пользователь: {callback.from_user.full_name}\n"
+                    f"ID: {user_id}\n"
+                    f"Username: @{callback.from_user.username or 'нет'}\n"
+                    f"Доступ до: {expires_str}\n\n"
+                    f"⚠️ Необходимо отключить автоплатёж в Продамус!",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
+    else:
+        await callback.message.edit_text(
+            "❌ У вас нет активной подписки.",
+            parse_mode="HTML"
+        )
+
+    await callback.answer()
+
+
+@router.callback_query(F.data == "keep_subscription")
+async def keep_subscription(callback: CallbackQuery):
+    """Пользователь решил оставить подписку"""
+    await callback.message.edit_text(
+        "✅ Отлично! Ваша подписка остаётся активной. 🎉",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "change_plan")
+async def change_plan(callback: CallbackQuery):
+    """Смена тарифа"""
+    await callback.message.edit_text(
+        "🔄 <b>Смена тарифа</b>\n\n"
+        "Выберите новый тариф. Он вступит в силу после окончания текущей подписки:",
+        reply_markup=kb.subscription_plans_kb(),
+        parse_mode="HTML"
     )
     await callback.answer()
 

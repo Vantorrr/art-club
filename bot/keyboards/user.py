@@ -71,6 +71,28 @@ def cancel_kb() -> InlineKeyboardMarkup:
     return keyboard
 
 
+def my_subscription_kb() -> InlineKeyboardMarkup:
+    """Клавиатура для активной подписки"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Сменить тариф", callback_data="change_plan")],
+            [InlineKeyboardButton(text="❌ Отменить подписку", callback_data="cancel_subscription")],
+        ]
+    )
+    return keyboard
+
+
+def confirm_cancel_subscription_kb() -> InlineKeyboardMarkup:
+    """Подтверждение отмены подписки"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Да, отменить подписку", callback_data="confirm_cancel_subscription")],
+            [InlineKeyboardButton(text="« Нет, оставить", callback_data="keep_subscription")],
+        ]
+    )
+    return keyboard
+
+
 def support_kb() -> InlineKeyboardMarkup:
     """Контакты поддержки"""
     keyboard = InlineKeyboardMarkup(
