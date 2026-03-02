@@ -1031,26 +1031,50 @@ async def process_broadcast(callback: CallbackQuery, state: FSMContext, db: Data
         
         await callback.message.edit_text("⏳ Рассылка запущена...")
         
+        # Импортируем html для экранирования
+        from html import escape
+
         for user in users:
             try:
                 if data.get("media_type") == "photo":
-                    await callback.bot.send_photo(
-                        user.id,
-                        data["media_file_id"],
-                        caption=data.get("text")
-                    )
+                    try:
+                        await callback.bot.send_photo(
+                            user.id,
+                            data["media_file_id"],
+                            caption=data.get("text")
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to send photo with HTML to {user.id}: {e}, trying plain text")
+                        await callback.bot.send_photo(
+                            user.id,
+                            data["media_file_id"],
+                            caption=escape(data.get("text", ""))
+                        )
                 elif data.get("media_type") == "video":
-                    await callback.bot.send_video(
-                        user.id,
-                        data["media_file_id"],
-                        caption=data.get("text")
-                    )
+                    try:
+                        await callback.bot.send_video(
+                            user.id,
+                            data["media_file_id"],
+                            caption=data.get("text")
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to send video with HTML to {user.id}: {e}, trying plain text")
+                        await callback.bot.send_video(
+                            user.id,
+                            data["media_file_id"],
+                            caption=escape(data.get("text", ""))
+                        )
                 else:
-                    await callback.bot.send_message(user.id, data["text"])
+                    try:
+                        await callback.bot.send_message(user.id, data["text"])
+                    except Exception as e:
+                        logger.warning(f"Failed to send message with HTML to {user.id}: {e}, trying plain text")
+                        await callback.bot.send_message(user.id, escape(data["text"]))
                 
                 sent_count += 1
                 await asyncio.sleep(0.05)  # Небольшая задержка чтобы не спамить
-            except Exception:
+            except Exception as e:
+                logger.error(f"Failed to send to {user.id}: {e}")
                 failed_count += 1
         
         # Сохраняем статистику в БД
@@ -1068,7 +1092,8 @@ async def process_broadcast(callback: CallbackQuery, state: FSMContext, db: Data
         await callback.message.answer(
             f"✅ <b>Рассылка завершена!</b>\n\n"
             f"✉️ Отправлено: {sent_count}\n"
-            f"❌ Не удалось: {failed_count}",
+            f"❌ Не удалось: {failed_count}\n\n"
+            f"<i>(Если есть неудачные отправки, возможно, пользователи заблокировали бота)</i>",
             parse_mode="HTML"
         )
         
