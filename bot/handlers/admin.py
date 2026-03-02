@@ -1,3 +1,4 @@
+import asyncio
 import os
 import random
 import string
@@ -1028,6 +1029,8 @@ async def process_broadcast(callback: CallbackQuery, state: FSMContext, db: Data
         sent_count = 0
         failed_count = 0
         
+        await callback.message.edit_text("⏳ Рассылка запущена...")
+        
         for user in users:
             try:
                 if data.get("media_type") == "photo":
@@ -1046,6 +1049,7 @@ async def process_broadcast(callback: CallbackQuery, state: FSMContext, db: Data
                     await callback.bot.send_message(user.id, data["text"])
                 
                 sent_count += 1
+                await asyncio.sleep(0.05)  # Небольшая задержка чтобы не спамить
             except Exception:
                 failed_count += 1
         
@@ -1061,7 +1065,7 @@ async def process_broadcast(callback: CallbackQuery, state: FSMContext, db: Data
         except Exception as e:
             logger.error(f"Ошибка сохранения статистики рассылки: {e}")
         
-        await callback.message.edit_text(
+        await callback.message.answer(
             f"✅ <b>Рассылка завершена!</b>\n\n"
             f"✉️ Отправлено: {sent_count}\n"
             f"❌ Не удалось: {failed_count}",
