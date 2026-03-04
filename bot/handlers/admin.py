@@ -460,41 +460,62 @@ async def users_list(message: Message, db: Database):
         await message.answer("📭 Пользователей пока нет.")
         return
     
-    # Показываем ВСЕХ пользователей (до 50 на странице)
-    text = "👥 <b>Все пользователи:</b>\n\n"
+    # Сортируем: сначала с активной подпиской, потом по дате окончания
+    users_sorted = sorted(users, key=lambda u: (
+        not u.is_subscribed,
+        u.subscription_until or datetime(2000, 1, 1)
+    ))
     
-    # Сортируем: сначала с активной подпиской
-    users_sorted = sorted(users, key=lambda u: (not u.is_subscribed, u.id))
+    active = [u for u in users_sorted if u.is_subscribed]
+    inactive = [u for u in users_sorted if not u.is_subscribed]
     
-    per_page = 50
-    total_shown = min(len(users_sorted), per_page)
-    
-    for i, user in enumerate(users_sorted[:per_page], 1):
-        status = "✅" if user.is_subscribed else "❌"
+    # Отправляем активных подписчиков первым сообщением
+    text_active = f"✅ <b>Активные подписчики ({len(active)}):</b>\n\n"
+    for i, user in enumerate(active, 1):
+        full_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Без имени"
         
-        # Показываем username или имя
         if user.username:
-            name = f"@{user.username}"
-        elif user.first_name:
-            name = user.first_name
-            if user.last_name:
-                name += f" {user.last_name}"
+            contact = f"@{user.username}"
         else:
-            name = "Без имени"
+            contact = f"<a href='tg://user?id={user.id}'>{full_name}</a>"
         
-        # Добавляем дату окончания для активных подписок
-        if user.is_subscribed and user.subscription_until:
+        if user.subscription_until:
             days_left = (user.subscription_until - datetime.utcnow()).days
-            name += f" ({days_left}д.)"
+            if days_left <= 3:
+                warn = " ⚠️"
+            else:
+                warn = ""
+            until_str = f" — до {user.subscription_until.strftime('%d.%m')} ({days_left}д.){warn}"
+        else:
+            until_str = ""
         
-        text += f"{i}. {status} <code>{user.id}</code> — {name}\n"
+        text_active += f"{i}. {full_name}"
+        if user.username:
+            text_active += f"\n   👤 @{user.username}"
+        text_active += f"{until_str}\n\n"
     
-    text += f"\n<i>Показано {total_shown} из {len(users)} пользователей</i>"
+    await message.answer(text_active, parse_mode="HTML", disable_web_page_preview=True)
     
-    if len(users) > per_page:
-        text += f"\n<i>Для просмотра остальных используйте команду /users_all</i>"
+    # Отправляем неактивных вторым сообщением (если не слишком много)
+    if inactive:
+        text_inactive = f"❌ <b>Нет подписки ({len(inactive)}):</b>\n\n"
+        for user in inactive[:20]:
+            full_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Без имени"
+            if user.username:
+                text_inactive += f"• {full_name} — @{user.username}\n"
+            else:
+                text_inactive += f"• {full_name}\n"
+        
+        if len(inactive) > 20:
+            text_inactive += f"\n... и ещё {len(inactive) - 20}"
+        
+        await message.answer(text_inactive, parse_mode="HTML")
     
-    await message.answer(text, parse_mode="HTML")
+    await message.answer(
+        f"📊 <b>Итого:</b> {len(users)} чел. | {len(active)} активных\n\n"
+        f"<i>💡 Пользователи без @юзернейма в Telegram — нажмите на их имя для перехода в чат</i>",
+        parse_mode="HTML"
+    )
 
 
 # ============ ПРОМОКОДЫ ============
