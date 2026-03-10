@@ -26,6 +26,13 @@ class SubscriptionChecker:
         logger.info("Проверка истекших подписок...")
         
         try:
+            # Emergency safe mode: prevent accidental removals while recurring
+            # webhooks are being stabilized on provider side.
+            disable_removal = os.getenv("DISABLE_EXPIRED_REMOVAL", "true").lower() == "true"
+            if disable_removal:
+                logger.warning("Удаление истекших подписок отключено (DISABLE_EXPIRED_REMOVAL=true)")
+                return
+
             expired_users = await self.db.get_expired_subscribers()
             
             if not expired_users:
